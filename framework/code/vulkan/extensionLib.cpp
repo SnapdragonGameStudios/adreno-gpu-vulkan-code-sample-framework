@@ -452,6 +452,14 @@ namespace ExtensionLib
     }
 #endif // VK_ARM_data_graph
 
+#if VK_QCOM_data_graph_model
+    void Ext_VK_QCOM_data_graph_model::PrintFeatures() const
+    {
+        LOGI("VK_QCOM_data_graph_model (VkPhysicalDeviceDataGraphModelFeaturesQCOM):");
+        LOGI("    dataGraphModel: %s", this->AvailableFeatures.dataGraphModel ? "True" : "False");
+    }
+#endif // VK_QCOM_data_graph_model
+
 #if VK_KHR_get_physical_device_properties2
 
     void Ext_VK_KHR_get_physical_device_properties2::LookupFunctionPointers(VkInstance vkInstance)

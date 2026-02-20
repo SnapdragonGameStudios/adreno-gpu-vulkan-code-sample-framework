@@ -14,6 +14,7 @@
 // Buffer binding locations
 #define SHADER_DIFFUSE_TEXTURE_LOC          0
 #define SHADER_OVERLAY_TEXTURE_LOC          1
+#define SHADER_FRAG_UBO_LOCATION            2
 
 layout(set = 0, binding = SHADER_DIFFUSE_TEXTURE_LOC) uniform sampler2D u_DiffuseTex;
 layout(set = 0, binding = SHADER_OVERLAY_TEXTURE_LOC) uniform sampler2D u_OverlayTex;
@@ -24,6 +25,13 @@ layout (location = 1) in vec4   v_VertColor;
 
 // Finally, the output color
 layout (location = 0) out vec4 FragColor;
+
+// Uniform Constant Buffer
+layout(std140, set = 0, binding = SHADER_FRAG_UBO_LOCATION) uniform Params 
+{
+    bool IsUpscalingActive;
+
+} FragCB;
 
 
 //-----------------------------------------------------------------------------

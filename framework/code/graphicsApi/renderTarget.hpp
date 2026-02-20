@@ -22,11 +22,11 @@ struct RenderTargetInitializeInfo
     std::span<const TextureFormat>          LayerFormats = {};
     TextureFormat                           DepthFormat = TextureFormat::UNDEFINED;
     RenderTargetBase*                       InheritedDepthAttachment = nullptr;
-    const std::span<const TEXTURE_TYPE>     TextureTypes = {};
-    const std::optional<const TEXTURE_TYPE> DepthTextureType = std::nullopt;
+    std::span<const TEXTURE_TYPE>           TextureTypes = {};
+    std::optional<TEXTURE_TYPE>             DepthTextureType = std::nullopt;
     std::span<const Msaa>                   Msaa = {};
-    const std::span<const TextureFormat>    ResolveTextureFormats = {};
-    const std::span<const SamplerFilter>    FilterModes = {};
+    std::span<const TextureFormat>          ResolveTextureFormats = {};
+    std::span<const SamplerFilter>          FilterModes = {};
 };
 
 class RenderTargetBase

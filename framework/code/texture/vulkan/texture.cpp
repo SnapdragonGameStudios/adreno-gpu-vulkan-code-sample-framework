@@ -480,6 +480,10 @@ Texture<Vulkan> CreateTextureObject<Vulkan>(Vulkan& vulkan, const CreateTexObjec
         ImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;// VK_IMAGE_TILING_LINEAR;      // VK_IMAGE_TILING_OPTIMAL
         ImageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
         break;
+    case TT_SAMPLED_TRANSFERDST:
+        ImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        ImageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        break;
     case TT_RENDER_TARGET:
         // If using VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT then tiling MUST be VK_IMAGE_TILING_OPTIMAL
         ImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
@@ -581,6 +585,7 @@ Texture<Vulkan> CreateTextureObject<Vulkan>(Vulkan& vulkan, const CreateTexObjec
         vulkan.SetImageLayout(vmaImage.GetVkBuffer(), SetupCmdBuffer, VK_IMAGE_ASPECT_COLOR_BIT, ImageInfo.initialLayout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, (VkPipelineStageFlags)0/*unused param*/, (VkPipelineStageFlags)0/*unused param*/, 0, ImageInfo.mipLevels, 0, ImageInfo.arrayLayers);
         retImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         break;
+    case TT_SAMPLED_TRANSFERDST:
     case TT_NORMAL:
         vulkan.SetImageLayout(vmaImage.GetVkBuffer(), SetupCmdBuffer, VK_IMAGE_ASPECT_COLOR_BIT, ImageInfo.initialLayout, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, (VkPipelineStageFlags)0/*unused param*/, (VkPipelineStageFlags)0/*unused param*/, 0, ImageInfo.mipLevels, 0, ImageInfo.arrayLayers);
         retImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -667,6 +672,7 @@ Texture<Vulkan> CreateTextureObject<Vulkan>(Vulkan& vulkan, const CreateTexObjec
     case TT_SHADING_RATE_IMAGE:
     case TT_CPU_UPDATE:
     case TT_NORMAL:
+    case TT_SAMPLED_TRANSFERDST:
     case TT_RENDER_TARGET:
     case TT_RENDER_TARGET_WITH_STORAGE:
     case TT_RENDER_TARGET_TRANSFERSRC:

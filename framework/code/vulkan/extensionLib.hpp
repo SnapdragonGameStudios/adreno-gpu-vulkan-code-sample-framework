@@ -564,6 +564,32 @@ namespace ExtensionLib
 
 #endif // VK_ARM_data_graph
 
+#if VK_QCOM_data_graph_model
+
+    struct Ext_VK_QCOM_data_graph_model : public VulkanFeaturesAndFunctionPointerExtensionHelper<
+        VkPhysicalDeviceDataGraphModelFeaturesQCOM, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_MODEL_FEATURES_QCOM>
+    {
+        using tBase = VulkanFeaturesAndFunctionPointerExtensionHelper;
+        static constexpr auto Name = VK_QCOM_DATA_GRAPH_MODEL_EXTENSION_NAME;
+
+        explicit Ext_VK_QCOM_data_graph_model(VulkanExtensionStatus status = VulkanExtensionStatus::eRequired)
+            : tBase(Name, status)
+        {
+        }
+
+        void PopulateRequestedFeatures() override
+        {
+            RequestedFeatures.sType = AvailableFeatures.sType;
+            RequestedFeatures.dataGraphModel = AvailableFeatures.dataGraphModel;
+        }
+
+        void PrintFeatures() const override;
+        void LookupFunctionPointers(VkInstance vkInstance) override {}
+        void LookupFunctionPointers(VkDevice, PFN_vkGetDeviceProcAddr) override {}
+    };
+
+#endif // VK_QCOM_data_graph_model
+
 #if VK_QCOM_tile_properties
 
     struct Ext_VK_QCOM_tile_properties : public VulkanFeaturesAndFunctionPointerExtensionHelper<
@@ -704,6 +730,146 @@ namespace ExtensionLib
     };
 
 #endif // VK_KHR_get_physical_device_properties2
+
+#if VK_KHR_external_memory_capabilities
+
+    // Instance extension: exposes capability queries (buffer/image external memory).
+    struct Ext_VK_KHR_external_memory_capabilities : public VulkanFunctionPointerExtensionHelper<VulkanExtensionType::eInstance>
+    {
+        static constexpr auto Name = VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME;
+        explicit Ext_VK_KHR_external_memory_capabilities(VulkanExtensionStatus status = VulkanExtensionStatus::eRequired)
+            : VulkanFunctionPointerExtensionHelper(Name, status)
+        {
+        }
+
+        // Volk will resolve globally; we keep the overrides for consistency.
+        void LookupFunctionPointers(VkInstance) override {}
+        void LookupFunctionPointers(VkDevice, PFN_vkGetDeviceProcAddr) override {}
+    };
+
+#endif // VK_KHR_external_memory_capabilities
+
+#if VK_KHR_external_memory
+
+    // Device extension: enables external memory types/flags. No commands to load.
+    struct Ext_VK_KHR_external_memory : public VulkanFunctionPointerExtensionHelper<VulkanExtensionType::eDevice>
+    {
+        static constexpr auto Name = VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME;
+        explicit Ext_VK_KHR_external_memory(VulkanExtensionStatus status = VulkanExtensionStatus::eRequired)
+            : VulkanFunctionPointerExtensionHelper(Name, status)
+        {
+        }
+
+        void LookupFunctionPointers(VkInstance) override {}
+        void LookupFunctionPointers(VkDevice, PFN_vkGetDeviceProcAddr) override {}
+    };
+
+#endif // VK_KHR_external_memory
+
+#if VK_KHR_external_memory_fd
+
+    // Device extension: POSIX file descriptor handles for external memory.
+    struct Ext_VK_KHR_external_memory_fd : public VulkanFunctionPointerExtensionHelper<VulkanExtensionType::eDevice>
+    {
+        static constexpr auto Name = VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME;
+        explicit Ext_VK_KHR_external_memory_fd(VulkanExtensionStatus status = VulkanExtensionStatus::eRequired)
+            : VulkanFunctionPointerExtensionHelper(Name, status)
+        {
+        }
+
+        void LookupFunctionPointers(VkInstance) override {}
+        void LookupFunctionPointers(VkDevice, PFN_vkGetDeviceProcAddr) override {}
+    };
+
+#endif // VK_KHR_external_memory_fd
+
+#if defined(VK_USE_PLATFORM_WIN32_KHR) && VK_KHR_external_memory_win32
+
+    // Device extension: Win32 HANDLEs for external memory.
+    struct Ext_VK_KHR_external_memory_win32 : public VulkanFunctionPointerExtensionHelper<VulkanExtensionType::eDevice>
+    {
+        static constexpr auto Name = VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME;
+        explicit Ext_VK_KHR_external_memory_win32(VulkanExtensionStatus status = VulkanExtensionStatus::eRequired)
+            : VulkanFunctionPointerExtensionHelper(Name, status)
+        {
+        }
+
+        void LookupFunctionPointers(VkInstance) override {}
+        void LookupFunctionPointers(VkDevice, PFN_vkGetDeviceProcAddr) override {}
+    };
+
+#endif // VK_USE_PLATFORM_WIN32_KHR && VK_KHR_external_memory_win32
+
+
+#if VK_KHR_external_semaphore_capabilities
+
+    // Instance extension: exposes semaphore external capability queries.
+    struct Ext_VK_KHR_external_semaphore_capabilities : public VulkanFunctionPointerExtensionHelper<VulkanExtensionType::eInstance>
+    {
+        static constexpr auto Name = VK_KHR_EXTERNAL_SEMAPHORE_CAPABILITIES_EXTENSION_NAME;
+        explicit Ext_VK_KHR_external_semaphore_capabilities(VulkanExtensionStatus status = VulkanExtensionStatus::eRequired)
+            : VulkanFunctionPointerExtensionHelper(Name, status)
+        {
+        }
+
+        void LookupFunctionPointers(VkInstance) override {}
+        void LookupFunctionPointers(VkDevice, PFN_vkGetDeviceProcAddr) override {}
+    };
+
+#endif // VK_KHR_external_semaphore_capabilities
+
+#if VK_KHR_external_semaphore
+
+    // Device extension: enables external semaphore types/flags. No commands to load.
+    struct Ext_VK_KHR_external_semaphore : public VulkanFunctionPointerExtensionHelper<VulkanExtensionType::eDevice>
+    {
+        static constexpr auto Name = VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME;
+        explicit Ext_VK_KHR_external_semaphore(VulkanExtensionStatus status = VulkanExtensionStatus::eRequired)
+            : VulkanFunctionPointerExtensionHelper(Name, status)
+        {
+        }
+
+        void LookupFunctionPointers(VkInstance) override {}
+        void LookupFunctionPointers(VkDevice, PFN_vkGetDeviceProcAddr) override {}
+    };
+
+#endif // VK_KHR_external_semaphore
+
+
+#if VK_KHR_external_semaphore_fd
+
+    // Device extension: POSIX file descriptor handles for external semaphores.
+    struct Ext_VK_KHR_external_semaphore_fd : public VulkanFunctionPointerExtensionHelper<VulkanExtensionType::eDevice>
+    {
+        static constexpr auto Name = VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME;
+        explicit Ext_VK_KHR_external_semaphore_fd(VulkanExtensionStatus status = VulkanExtensionStatus::eRequired)
+            : VulkanFunctionPointerExtensionHelper(Name, status)
+        {
+        }
+
+        void LookupFunctionPointers(VkInstance) override {}
+        void LookupFunctionPointers(VkDevice, PFN_vkGetDeviceProcAddr) override {}
+    };
+
+#endif // VK_KHR_external_semaphore_fd
+
+
+#if defined(VK_USE_PLATFORM_WIN32_KHR) && VK_KHR_external_semaphore_win32
+
+    // Device extension: Win32 HANDLEs for external semaphores.
+    struct Ext_VK_KHR_external_semaphore_win32 : public VulkanFunctionPointerExtensionHelper<VulkanExtensionType::eDevice>
+    {
+        static constexpr auto Name = VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME;
+        explicit Ext_VK_KHR_external_semaphore_win32(VulkanExtensionStatus status = VulkanExtensionStatus::eRequired)
+            : VulkanFunctionPointerExtensionHelper(Name, status)
+        {
+        }
+
+        void LookupFunctionPointers(VkInstance) override {}
+        void LookupFunctionPointers(VkDevice, PFN_vkGetDeviceProcAddr) override {}
+    };
+
+#endif // VK_USE_PLATFORM_WIN32_KHR && VK_KHR_external_semaphore_win32
 
 #if VK_KHR_surface
 

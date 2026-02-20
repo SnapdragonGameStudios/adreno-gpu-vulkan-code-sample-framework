@@ -50,6 +50,7 @@ void CameraControllerTouch::TouchDownEvent(int iPointerID, float xPos, float yPo
         m_LookaroundTouchId = iPointerID;
         m_LastLookaroundTouchPosition = { xPos, yPos };
         m_CurrentLookaroundTouchPosition = m_LastLookaroundTouchPosition;
+        m_LookDeltaPixelsAccum = glm::vec2(0.0f);
     }
     else if (xPos < m_ScreenSize.x * 0.5f && m_MovementTouchId == -1)
     {
@@ -65,7 +66,11 @@ void CameraControllerTouch::TouchMoveEvent(int iPointerID, float xPos, float yPo
 {
     if (iPointerID == m_LookaroundTouchId)
     {
-        m_CurrentLookaroundTouchPosition = { xPos, yPos };
+        const glm::vec2 new_pos = { xPos, yPos };
+        const glm::vec2 delta = new_pos - m_CurrentLookaroundTouchPosition;
+
+        m_CurrentLookaroundTouchPosition = new_pos;
+        m_LookDeltaPixelsAccum += delta;
     }
     else if (iPointerID == m_MovementTouchId)
     {
@@ -81,6 +86,7 @@ void CameraControllerTouch::TouchUpEvent(int iPointerID, float xPos, float yPos)
     {
         m_LookaroundTouchId = -1;
         m_CurrentLookaroundTouchPosition = { xPos, yPos };
+        m_LookDeltaPixelsAccum = glm::vec2(0.0f);
     }
     else if (iPointerID == m_MovementTouchId)
     {
@@ -94,24 +100,52 @@ void CameraControllerTouch::TouchUpEvent(int iPointerID, float xPos, float yPos)
 void CameraControllerTouch::Update(float frameTime, glm::vec3& position, glm::quat& rot, bool& cut)
 {
     cut = false;
+
     if (m_LookaroundTouchId != -1)
     {
-        auto mouseDiff = m_LastLookaroundTouchPosition - m_CurrentLookaroundTouchPosition;
-        auto angleChange = mouseDiff * frameTime * m_RotateSpeed;
+        const float tau = glm::max(0.0001f, m_LookSmoothTauSec);
+        const float alpha = 1.0f - glm::exp(-frameTime / tau); // 0..1
 
-        m_LastLookaroundTouchPosition = m_CurrentLookaroundTouchPosition;
-        // one (touch) rotation axis is relative to the view direction, other is relative to world - prevents camera from 'twisting' although does introduce gimbal when looking along the UP axis and rotationg left/right.
-        rot = glm::angleAxis( angleChange.x, m_WorldUp ) * rot * glm::angleAxis( angleChange.y, cVecViewRight );
-        rot = glm::normalize( rot );
+        const glm::vec2 applyPixels = m_LookDeltaPixelsAccum * alpha;
+        m_LookDeltaPixelsAccum -= applyPixels;
+
+        const glm::vec2 ndcDelta =
+        {
+            applyPixels.x / glm::max(1.0f, m_ScreenSize.x),
+            applyPixels.y / glm::max(1.0f, m_ScreenSize.y)
+        };
+
+        const float yaw = -ndcDelta.x * glm::pi<float>() * m_RotateSpeed;
+        const float pitch = -ndcDelta.y * glm::pi<float>() * m_RotateSpeed;
+
+        const glm::vec3 viewRight = rot * cVecViewRight;
+
+        rot = glm::angleAxis(yaw, m_WorldUp) * rot;
+        rot = glm::angleAxis(pitch, viewRight) * rot;
+        rot = glm::normalize(rot);
+    }
+    else
+    {
+        m_LookDeltaPixelsAccum = glm::vec2(0.0f);
     }
 
     if (m_MovementTouchId != -1)
     {
-        auto mouseDiff = m_LastMovementTouchPosition - m_CurrentMovementTouchPosition;
-        auto directionChange = mouseDiff * frameTime * m_MoveSpeed * cTouchMoveSpeedMultipler;
+#if 1
+        const auto mouseDiff = m_LastMovementTouchPosition - m_CurrentMovementTouchPosition;
+        const auto directionChange = mouseDiff * frameTime * m_MoveSpeed * cTouchMoveSpeedMultipler;
 
         position -= rot * cVecViewRight * directionChange.x;
         position += rot * cVecViewForward * directionChange.y;
+#else
+        const glm::vec2 mouseDiff = m_LastMovementTouchPosition - m_CurrentMovementTouchPosition;
+        const glm::vec2 directionChange = mouseDiff * frameTime * m_MoveSpeed * cTouchMoveSpeedMultipler;
+
+        position -= rot * cVecViewRight * directionChange.x;
+        position += rot * cVecViewForward * directionChange.y;
+
+        m_LastMovementTouchPosition = m_CurrentMovementTouchPosition;
+#endif
     }
 }
 
