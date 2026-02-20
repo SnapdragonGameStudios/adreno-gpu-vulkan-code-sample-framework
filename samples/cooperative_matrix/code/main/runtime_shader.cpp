@@ -1,14 +1,10 @@
 //============================================================================================================
 //
 //
-//                  Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
+//                  Copyright (c) 2026, Qualcomm Innovation Center, Inc. All rights reserved.
 //                              SPDX-License-Identifier: BSD-3-Clause
 //
 //============================================================================================================
-
-///
-/// Sample app demonstrating the loading of a .gltf file (hello world)
-///
 
 #include "runtime_shader.hpp"
 #include "main/applicationEntrypoint.hpp"

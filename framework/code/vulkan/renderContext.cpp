@@ -189,7 +189,7 @@ RenderContext<Vulkan>::RenderPassContextData& RenderContext<Vulkan>::RenderPassC
 RenderContext<Vulkan>::RenderContext( RenderPass<Vulkan> _renderPass, Pipeline<Vulkan> _pipeline, Framebuffer<Vulkan> _framebuffer, std::string _name ) noexcept
 //-----------------------------------------------------------------------------
     : v{std::move( RenderPassContextData {
-            std::move( _renderPass ), std::move( _pipeline ), std::move( _framebuffer ), _framebuffer.GetRenderPassClearData().Copy()
+            std::move( _renderPass ), std::move( _pipeline ), _framebuffer, _framebuffer.GetRenderPassClearData().Copy()
         } )}
     , name{std::move( _name )}
 {

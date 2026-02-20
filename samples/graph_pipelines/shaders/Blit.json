@@ -21,6 +21,11 @@
 							"Stages": [ "Fragment" ],
 							"Count": 1,
 							"Names": [ "Overlay" ]
+						},
+						{
+							"Type": "UniformBuffer",
+							"Stages": [ "Fragment" ],
+							"Names": [ "Params" ]
 						}
 					]
 				}

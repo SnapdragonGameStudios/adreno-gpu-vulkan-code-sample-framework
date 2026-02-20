@@ -7,11 +7,15 @@
 //============================================================================================================
 
 #include "cooperative_matrix_tester.hpp"
-#include "cooperative_matrix_shaders.hpp"
 #include "vulkan/extensionHelpers.hpp"
 #include "vulkan/extensionLib.hpp"
 #include <../external/glslang/glslang/Include/glslang_c_interface.h>
 #include <../external/glslang/glslang/Public/resource_limits_c.h>
+
+// Runtime shaders
+#include "runtime_shaders/MxM_Basic.hpp"
+#include "runtime_shaders/MxM_VecToMat.hpp"
+#include "runtime_shaders/Conv.hpp"
 
 #pragma push_macro("BOOL")
 #define BOOL HALF_BOOL
@@ -552,14 +556,14 @@ bool CooperativeMatrixRunner::InitializeRunner()
         VK_COMPONENT_TYPE_FLOAT32_KHR ,
         VK_COMPONENT_TYPE_FLOAT32_KHR ,
         {
-            {8, 6, 128, // SizeInBlocks
-             0, 64, 0}, // Size (tile)
+            {8,  6, 128, // SizeInBlocks
+             64, 64, 8}, // Size (tile)
 
-            {8, 12, 128,
-             0, 32, 0},
+            {8,  12, 128,
+             64, 32, 16},
 
-            {8, 24, 128,
-             0, 16, 0}
+            {8,  24, 128,
+             64, 16, 32}
         } });
 
     m_test_group_templates.push_back(TestGroupTemplateDescription{

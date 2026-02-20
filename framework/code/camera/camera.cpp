@@ -113,6 +113,19 @@ void Camera::UpdateMatrices()
 glm::mat4 Camera::GetProjectionWithJitter(const glm::vec3 jitter) const
 //-----------------------------------------------------------------------------
 {
+#if 0
     glm::mat4 jm = glm::translate(jitter);
     return jm * m_ProjectionMatrixNoJitter;
+#else
+
+    // Assumes jitts is in NDC (not pixel).
+    // Remember to flip jitter y, if needed.
+    glm::mat4 jitteredProj = m_ProjectionMatrixNoJitter;
+    for (int col = 0; col < 4; ++col)
+    {
+        jitteredProj[col][0] += jitter.x * jitteredProj[col][3];
+        jitteredProj[col][1] += jitter.y * jitteredProj[col][3];
+    }
+    return jitteredProj;
+#endif
 }

@@ -1224,6 +1224,8 @@ bool Vulkan::InitInstanceExtensions()
     return true;
 }
 
+
+
 //-----------------------------------------------------------------------------
 bool Vulkan::GetDataGraphProcessingEngine()
 //-----------------------------------------------------------------------------
@@ -1233,105 +1235,149 @@ bool Vulkan::GetDataGraphProcessingEngine()
         return true;
     }
 
-    // If Ext_VK_ARM_data_graph->AvailableFeatures.dataGraph is supported, force graph pipeline support here while that
-    // isn't fully supported publicly by the driver
-#if defined(OS_ANDROID)
-    {
-#if 0
-        auto* Ext_VK_ARM_tensors = static_cast<ExtensionLib::Ext_VK_ARM_tensors*>(m_DeviceExtensions.GetExtension(VK_ARM_TENSORS_EXTENSION_NAME));
-        auto* Ext_VK_ARM_data_graph = static_cast<ExtensionLib::Ext_VK_ARM_data_graph*>(m_DeviceExtensions.GetExtension(VK_ARM_DATA_GRAPH_EXTENSION_NAME));
-        auto fpGetDeviceProcAddr = (PFN_vkGetDeviceProcAddr)vkGetInstanceProcAddr(GetVulkanInstance(), "vkGetDeviceProcAddr");
-        if (Ext_VK_ARM_tensors 
-            && Ext_VK_ARM_data_graph 
-            && Ext_VK_ARM_data_graph->AvailableFeatures.dataGraph
-            && fpGetDeviceProcAddr)
-        {
-            LOGI("Forcing registering and enabling Graph Pipelines extensions for Android");
+    const auto* Ext_VK_QCOM_data_graph_model =
+        static_cast<ExtensionLib::Ext_VK_QCOM_data_graph_model*>(m_DeviceExtensions.GetExtension(VK_QCOM_DATA_GRAPH_MODEL_EXTENSION_NAME));
 
-            try
-            {
-                Ext_VK_ARM_tensors->Status = VulkanExtensionStatus::eLoaded;
-                Ext_VK_ARM_tensors->LookupFunctionPointers(m_VulkanDevice, fpGetDeviceProcAddr);
-                Ext_VK_ARM_tensors->LookupFunctionPointers(m_VulkanInstance);
-
-                Ext_VK_ARM_data_graph->Status = VulkanExtensionStatus::eLoaded;
-                Ext_VK_ARM_data_graph->LookupFunctionPointers(m_VulkanDevice, fpGetDeviceProcAddr);
-                Ext_VK_ARM_data_graph->LookupFunctionPointers(m_VulkanInstance);
-
-                LOGI("Forcing registering and enabling Graph Pipelines extensions for Android - Done");
-            }
-            catch (...)
-            {
-                Ext_VK_ARM_tensors->Status = VulkanExtensionStatus::eLoaded;
-                Ext_VK_ARM_data_graph->Status = VulkanExtensionStatus::eLoaded;
-
-                LOGI("Forcing registering and enabling Graph Pipelines extensions for Android - Failed, disabling EXT");
-            }
-        }
-#endif
-    }
-#endif
+    const bool is_qcom_data_graph_model_supported = (Ext_VK_QCOM_data_graph_model != nullptr);
 
     LOGI("************************************");
     LOGI("*** DATA GRAPH PROCESSING ENGINE ***");
     LOGI("************************************");
 
-    uint32_t propCount = 0;
-    vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(
+    const uint32_t queue_family_index = m_VulkanQueues[Vulkan::eDataGraphQueue].QueueFamilyIndex;
+
+    uint32_t prop_count = 0;
+    VkResult result = vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(
         m_VulkanGpu,
-        m_VulkanQueues[Vulkan::eDataGraphQueue].QueueFamilyIndex,
-        &propCount,
+        queue_family_index,
+        &prop_count,
         nullptr);
-    std::vector<VkQueueFamilyDataGraphPropertiesARM> dataGraphProps = std::vector<VkQueueFamilyDataGraphPropertiesARM>(propCount);
-    vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(
+
+    if (result != VK_SUCCESS || prop_count == 0)
+    {
+        LOGW("*** No data graph properties returned (result=%d, propCount=%u). Disabling data graph.", static_cast<int>(result), prop_count);
+        m_VulkanGraphicsQueueSupportsDataGraph = false;
+        return true;
+    }
+
+    std::vector<VkQueueFamilyDataGraphPropertiesARM> data_graph_props(prop_count);
+    for (auto& p : data_graph_props)
+    {
+        p.sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_DATA_GRAPH_PROPERTIES_ARM; 
+        p.pNext = nullptr;
+    }
+
+    result = vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(
         m_VulkanGpu,
-        m_VulkanQueues[Vulkan::eDataGraphQueue].QueueFamilyIndex,
-        &propCount,
-        dataGraphProps.data());
+        queue_family_index,
+        &prop_count,
+        data_graph_props.data());
+
+    if (result != VK_SUCCESS || prop_count == 0)
+    {
+        LOGW("*** Failed to query data graph properties (result=%d, propCount=%u). Disabling data graph.", static_cast<int>(result), prop_count);
+        m_VulkanGraphicsQueueSupportsDataGraph = false;
+        return true;
+    }
 
     LOGI("*** Checking queue data graph props:");
-    LOGI("*** \tpropCount: %d", propCount);
-    bool validEngineAvailable = false;
-    for (uint32_t j = 0; j < propCount; j++)
+    LOGI("*** \tpropCount: %u", prop_count);
+
+    for (uint32_t j = 0; j < prop_count; ++j)
     {
         LOGI("*** \t\tEngine:");
-        LOGI("*** \t\t\tType:          0x%x", dataGraphProps[j].engine.type);
-        LOGI("*** \t\t\tisForeign:       %d", static_cast<int>(dataGraphProps[j].engine.isForeign));
+        LOGI("*** \t\t\tType:           0x%x", data_graph_props[j].engine.type);
+        LOGI("*** \t\t\tisForeign:      %d", static_cast<int>(data_graph_props[j].engine.isForeign));
         LOGI("*** \t\tOperation:");
-        LOGI("*** \t\t\toperationType: 0x%x", dataGraphProps[j].operation.operationType);
-        LOGI("*** \t\t\toperationType:   %s", dataGraphProps[j].operation.name);
-        LOGI("*** \t\t\toperationType:   %d", dataGraphProps[j].operation.version);
-        //if ((dataGraphProps[j].engine.type             == VK_PHYSICAL_DEVICE_DATA_GRAPH_PROCESSING_ENGINE_TYPE_NEURAL_ARM) &&
-        //    (dataGraphProps[j].operation.operationType == VK_PHYSICAL_DEVICE_DATA_GRAPH_OPERATION_TYPE_NEURAL_MODEL_ARM ))
+        LOGI("*** \t\t\toperationType:  0x%x", data_graph_props[j].operation.operationType);
+        LOGI("*** \t\t\tname:           %s", data_graph_props[j].operation.name);
+        LOGI("*** \t\t\tversion:        %u", data_graph_props[j].operation.version);
+    }
+
+    auto Select_engine_and_op = [&](
+        VkPhysicalDeviceDataGraphProcessingEngineTypeARM engine_type,
+        VkPhysicalDeviceDataGraphOperationTypeARM op_type) -> bool
+    {
+
+        for (uint32_t j = 0; j < prop_count; ++j)
         {
-            // Should also verify operation name and version to ensure compatibility with offline compiler
-            m_VulkanDataGraphProcessingEngine = dataGraphProps[j].engine;
-            break;
+            auto& entry = data_graph_props[j];
+            if (entry.engine.type == engine_type && entry.operation.operationType == op_type)
+            {
+                m_VulkanDataGraphProcessingEngine = entry.engine;
+
+                LOGI("*** Selected engine/op:");
+                LOGI("*** \tengine.type=0x%x  isForeign=%d",
+                    entry.engine.type,
+                    static_cast<int>(entry.engine.isForeign));
+                LOGI("*** \top.type=0x%x     name=%s  version=%u",
+                    entry.operation.operationType,
+                    entry.operation.name,
+                    entry.operation.version);
+
+                return true;
+            }
+        }
+
+        return false;
+    };
+
+ 
+    bool selected = false;
+
+    if (is_qcom_data_graph_model_supported)
+    {
+        // Prefer QCOM Neural engine + QCOM NeuralModel op, then QCOM Compute engine + QCOM NeuralModel op.
+        // If unavailable, try QCOM BuiltinModel op.
+        //
+        // QCOM op/engine enums are provided by VK_QCOM_data_graph_model
+        selected =
+            Select_engine_and_op(VK_PHYSICAL_DEVICE_DATA_GRAPH_PROCESSING_ENGINE_TYPE_NEURAL_QCOM,
+                VK_PHYSICAL_DEVICE_DATA_GRAPH_OPERATION_TYPE_NEURAL_MODEL_QCOM) ||
+            Select_engine_and_op(VK_PHYSICAL_DEVICE_DATA_GRAPH_PROCESSING_ENGINE_TYPE_COMPUTE_QCOM,
+                VK_PHYSICAL_DEVICE_DATA_GRAPH_OPERATION_TYPE_NEURAL_MODEL_QCOM) ||
+            Select_engine_and_op(VK_PHYSICAL_DEVICE_DATA_GRAPH_PROCESSING_ENGINE_TYPE_NEURAL_QCOM,
+                VK_PHYSICAL_DEVICE_DATA_GRAPH_OPERATION_TYPE_BUILTIN_MODEL_QCOM) ||
+            Select_engine_and_op(VK_PHYSICAL_DEVICE_DATA_GRAPH_PROCESSING_ENGINE_TYPE_COMPUTE_QCOM,
+                VK_PHYSICAL_DEVICE_DATA_GRAPH_OPERATION_TYPE_BUILTIN_MODEL_QCOM);
+
+        if (!selected)
+        {
+            LOGW("*** VK_QCOM_data_graph_model is active, but no QCOM engine/op pair was found on this queue family.");
         }
     }
 
-    LOGI("Ensuring Model <-> Device Capabilities support");
+    if (!selected)
     {
-        // NOTE: Here you would normally compre the device limits with the graph you want to execute, you should
-        // make sure the tensor dimensions (VkPhysicalDeviceTensorPropertiesARM) are big enough to handle your model.
+        // Fallback: first available
+        m_VulkanDataGraphProcessingEngine = data_graph_props[0].engine;
+        selected = true;
+
+        LOGI("*** Fallback selected first engine:");
+        LOGI("*** \tengine.type=0x%x  isForeign=%d",
+            m_VulkanDataGraphProcessingEngine.type,
+            static_cast<int>(m_VulkanDataGraphProcessingEngine.isForeign));
     }
 
     LOGI("Checking for Tensor Storage Format Support");
     {
-        if(HasLoadedVulkanDeviceExtension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME))
+        if (HasLoadedVulkanDeviceExtension(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME))
         {
-            VkTensorFormatPropertiesARM tensorFmtProps = {};
-            VkFormatProperties2         f32Props = {};
+            VkTensorFormatPropertiesARM tensor_fmt_props = {};
+            VkFormatProperties2         format_props = {};
 
-            tensorFmtProps.sType = VK_STRUCTURE_TYPE_TENSOR_FORMAT_PROPERTIES_ARM;
-            f32Props.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2;
-            f32Props.pNext = &tensorFmtProps;
+            tensor_fmt_props.sType = VK_STRUCTURE_TYPE_TENSOR_FORMAT_PROPERTIES_ARM;
+            tensor_fmt_props.pNext = nullptr;
 
-            vkGetPhysicalDeviceFormatProperties2KHR(m_VulkanGpu, VK_FORMAT_R32_SFLOAT, &f32Props);
-            LOGI("*** \t\t\ttensorFmtProps.linearTilingTensorFeatures:   %d", static_cast<int64_t>(tensorFmtProps.linearTilingTensorFeatures));
-            LOGI("*** \t\t\ttensorFmtProps.optimalTilingTensorFeatures:   %d", static_cast<int64_t>(tensorFmtProps.optimalTilingTensorFeatures));
+            format_props.sType = VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2;
+            format_props.pNext = &tensor_fmt_props;
 
-            if ((tensorFmtProps.linearTilingTensorFeatures & VK_FORMAT_FEATURE_2_TENSOR_DATA_GRAPH_BIT_ARM) == 0)
+            vkGetPhysicalDeviceFormatProperties2KHR(m_VulkanGpu, VK_FORMAT_R32_SFLOAT, &format_props);
+
+            LOGI("*** \t\t\ttensorFmtProps.linearTilingTensorFeatures:   %lld", static_cast<long long>(tensor_fmt_props.linearTilingTensorFeatures));
+            LOGI("*** \t\t\ttensorFmtProps.optimalTilingTensorFeatures:  %lld", static_cast<long long>(tensor_fmt_props.optimalTilingTensorFeatures));
+
+            if ((tensor_fmt_props.linearTilingTensorFeatures & VK_FORMAT_FEATURE_2_TENSOR_DATA_GRAPH_BIT_ARM) == 0)
             {
                 LOGI("*** \t\t\t - NOTE: Device doesn't support tensor storage format");
             }
@@ -1342,30 +1388,31 @@ bool Vulkan::GetDataGraphProcessingEngine()
     {
         VkPhysicalDeviceQueueFamilyDataGraphProcessingEngineInfoARM info = {};
         info.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_QUEUE_FAMILY_DATA_GRAPH_PROCESSING_ENGINE_INFO_ARM;
-        info.queueFamilyIndex = m_VulkanQueues[Vulkan::eDataGraphQueue].QueueFamilyIndex;
+        info.pNext = nullptr;
+        info.queueFamilyIndex = queue_family_index;
         info.engineType = m_VulkanDataGraphProcessingEngine.type;
-        VkQueueFamilyDataGraphProcessingEnginePropertiesARM engineProps = {};
-        engineProps.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_QUEUE_FAMILY_DATA_GRAPH_PROCESSING_ENGINE_INFO_ARM;
 
-        vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM(m_VulkanGpu, &info, &engineProps);
+        VkQueueFamilyDataGraphProcessingEnginePropertiesARM engine_props = {};
+        engine_props.sType = VK_STRUCTURE_TYPE_QUEUE_FAMILY_DATA_GRAPH_PROCESSING_ENGINE_PROPERTIES_ARM; // correct [3](https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/546)
+        engine_props.pNext = nullptr;
 
-        // NOTE: These are only needed if you are using external objects (memory, synchronization, etc.). For this sample we only
-        // care about Vulkan primitives, but if you are using e.g. Android buffers, you should ensure they are supported first.
+        vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM(m_VulkanGpu, &info, &engine_props);
+
 #if 0
-        if ((engineProps.foreignSemaphoreHandleTypes & VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT) == 0)
+        if ((engine_props.foreignSemaphoreHandleTypes & VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT) == 0)
         {
             return false;
         }
-        if ((engineProps.foreignMemoryeHandleTypes & VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID) == 0)
+        if ((engine_props.foreignMemoryHandleTypes & VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID) == 0)
         {
             return false;
         }
 #endif
     }
 
-    LOGI("************************************");
-    LOGI("************************************");
-    LOGI("************************************");
+    LOGI("******************************************");
+    LOGI("* DATA Graph Processing Engine Completed *");
+    LOGI("******************************************");
 
     return true;
 }

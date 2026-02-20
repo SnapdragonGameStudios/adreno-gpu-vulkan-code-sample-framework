@@ -77,11 +77,21 @@ namespace ExtensionLib {
     struct Ext_VK_KHR_get_memory_requirements2;
     struct Ext_VK_ARM_tensors;
     struct Ext_VK_ARM_data_graph;
+    struct Ext_VK_QCOM_data_graph_model;
     struct Vulkan_SubgroupPropertiesHook;
     struct Vulkan_StorageFeaturesHook;
     struct Ext_VK_KHR_mesh_shader;
     struct Ext_VK_KHR_dynamic_rendering;
+    struct Ext_VK_KHR_external_memory_capabilities;
+    struct Ext_VK_KHR_external_memory;
+    struct Ext_VK_KHR_external_semaphore_capabilities;
+    struct Ext_VK_KHR_external_semaphore;
+    struct Ext_VK_KHR_external_memory_fd;
+    struct Ext_VK_KHR_external_semaphore_fd;
+    struct Ext_VK_KHR_external_memory_win32;
+    struct Ext_VK_KHR_external_semaphore_win32;
 };
+
 namespace vk {};
 class VulkanDebugCallback;
 enum class TextureFormat;

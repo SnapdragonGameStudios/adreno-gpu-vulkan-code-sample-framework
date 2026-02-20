@@ -1,5 +1,7 @@
 # Tile Memory Heap Sample
 
+![Screenshot](img/screenshot.png)
+
 This sample demonstrates a light clustering algorithm using Vulkan, with specific support for the *VK_QCOM_tile_memory_heap* extension.
 This extension allows the application to allocate and manage tile memory, which is used for efficient memory management within a command buffer submission batch.
 

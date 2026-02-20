@@ -1,7 +1,7 @@
 //============================================================================================================
 //
 //
-//                  Copyright (c) 2025, Qualcomm Innovation Center, Inc. All rights reserved.
+//                  Copyright (c) 2026, Qualcomm Innovation Center, Inc. All rights reserved.
 //                              SPDX-License-Identifier: BSD-3-Clause
 //
 //============================================================================================================
@@ -33,17 +33,6 @@
 #include <filesystem>
 #include <fstream>
 
-/*
-* # Major Keypoints:
-* 
-* - For the Data Graph queue selection, see "Vulkan::InitDataGraph()".
-* - For the Data Graph Processing Engine selection, see "bool Vulkan::GetDataGraphProcessingEngine()".
-* - For command pool initialization, see "bool Vulkan::InitCommandPools()".
-* 
-* 
-* 
-*/
-
 namespace
 {
     static constexpr std::array<const char*, NUM_RENDER_PASSES> sRenderPassNames = { "RP_SCENE", "RP_HUD", "RP_BLIT" };
@@ -57,7 +46,7 @@ namespace
     float   gNormalAmount = 0.3f;
     float   gNormalMirrorReflectAmount = 0.05f;
 
-    const char* gSceneAssetGraphModel = "PipelineCache.bin";
+    const char* gSceneAssetGraphModel = "PipelineCache.bin"; // What we expect to load the model via VK_QCOM_data_graph_model
     const char* gSceneAssetModel      = "SteamPunkSauna.gltf";
 
     static uint32_t FindMemoryType(VkPhysicalDevice& physicalDevice, uint32_t type_bits, VkMemoryPropertyFlags properties)
@@ -75,11 +64,6 @@ namespace
     };
 }
 
-///
-/// @brief Implementation of the Application entrypoint (called by the framework)
-/// @return Pointer to Application (derived from @FrameworkApplicationBase).
-/// Creates the Application class.  Ownership is passed to the calling (framework) function.
-/// 
 FrameworkApplicationBase* Application_ConstructApplication()
 {
     return new Application();
@@ -102,12 +86,9 @@ void Application::PreInitializeSetVulkanConfiguration(Vulkan::AppConfiguration& 
     config.RequiredExtension<ExtensionLib::Ext_VK_KHR_create_renderpass2>();
     config.RequiredExtension<ExtensionLib::Ext_VK_KHR_get_physical_device_properties2>();
 
-    // config.RequiredExtension<ExtensionLib::Ext_VK_ARM_tensors>();
-    // config.RequiredExtension<ExtensionLib::Ext_VK_ARM_data_graph>();
-    // config.RequiredExtension<ExtensionLib::Ext_VK_QCOM_data_graph_model>();
-    
     config.OptionalExtension<ExtensionLib::Ext_VK_ARM_tensors>();
     config.OptionalExtension<ExtensionLib::Ext_VK_ARM_data_graph>();
+    config.OptionalExtension<ExtensionLib::Ext_VK_QCOM_data_graph_model>();
 }
 
 //-----------------------------------------------------------------------------
@@ -121,9 +102,9 @@ bool Application::Initialize(uintptr_t windowHandle, uintptr_t hInstance)
 
     m_IsGraphPipelinesSupported &= GetVulkan()->HasLoadedVulkanDeviceExtension(VK_ARM_TENSORS_EXTENSION_NAME)
         && GetVulkan()->HasLoadedVulkanDeviceExtension(VK_ARM_DATA_GRAPH_EXTENSION_NAME);
-        
-    // If Ext_VK_ARM_data_graph->AvailableFeatures.dataGraph is supported, force graph pipeline support here while that
-    // isn't fully supported publicly by the driver
+
+    // If Ext_VK_ARM_data_graph->AvailableFeatures.dataGraph is supported, force graph pipeline support here in case the
+    // driver has support but it isn't exposed
 #if defined(OS_ANDROID)
     {
         auto* Ext_VK_ARM_tensors = static_cast<ExtensionLib::Ext_VK_ARM_tensors*>(GetVulkan()->m_DeviceExtensions.GetExtension(VK_ARM_TENSORS_EXTENSION_NAME));
@@ -223,6 +204,7 @@ void Application::Destroy()
     // Uniform Buffers
     ReleaseUniformBuffer(pVulkan, &m_ObjectVertUniform);
     ReleaseUniformBuffer(pVulkan, &m_LightUniform);
+    ReleaseUniformBuffer(pVulkan, &m_BlitFragUniform);
      
     for (auto& [hash, objectUniform] : m_ObjectFragUniforms)
     {
@@ -335,303 +317,24 @@ bool Application::CreateTensors()
 
     const int64_t componentsPerPixel = 3; // R8G8B8_UNORM and Model is RGB
 
-    m_InputTensor.strides          = { componentsPerPixel * m_RenderResolution.x, componentsPerPixel, 1 };
-    m_InputTensor.dimensions       = { m_RenderResolution.y, m_RenderResolution.x, componentsPerPixel };
-    m_InputTensor.portBindingIndex = m_QNNInputPortBinding;
+    m_InputTensor.strides            = { componentsPerPixel * m_RenderResolution.x, componentsPerPixel, 1 };
+    m_InputTensor.dimensions         = { m_RenderResolution.y, m_RenderResolution.x, componentsPerPixel };
+    m_InputTensor.port_binding_index = m_QNNInputPortBinding;
 
-    m_OutputTensor.strides          = { componentsPerPixel * m_UpscaledResolution.x, componentsPerPixel, 1 };
-    m_OutputTensor.dimensions       = { m_UpscaledResolution.y, m_UpscaledResolution.x, componentsPerPixel };
-    m_OutputTensor.portBindingIndex = m_QNNOutputPortBinding;
+    m_OutputTensor.strides            = { componentsPerPixel * m_UpscaledResolution.x, componentsPerPixel, 1 };
+    m_OutputTensor.dimensions         = { m_UpscaledResolution.y, m_UpscaledResolution.x, componentsPerPixel };
+    m_OutputTensor.port_binding_index = m_QNNOutputPortBinding;
 
-    auto CreateTensor = [&](GraphPipelineTensor& targetTensor) -> bool
-    {
-        const uint32_t bufferSize = targetTensor.dimensions[0] * targetTensor.dimensions[1] * targetTensor.dimensions[2];
-
-        // TENSOR OBJECT //
-
-        LOGI("Creating Tensors Object");
-
-        targetTensor.tensorDescription = VkTensorDescriptionARM
-        {
-            .sType = VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM,
-            .pNext = nullptr,
-            .tiling = VK_TENSOR_TILING_LINEAR_ARM, // VK_TENSOR_TILING_OPTIMAL_ARM TODO: Find out why it cannot be optimal
-            .format = VK_FORMAT_R8_UNORM,
-            .dimensionCount = static_cast<uint32_t>(targetTensor.dimensions.size()),
-            .pDimensions = targetTensor.dimensions.data(),
-            .pStrides = nullptr,
-            .usage = VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM/* | VK_TENSOR_USAGE_SHADER_BIT_ARM*/
-        };
-
-        VkExternalMemoryTensorCreateInfoARM externalInfo
-        {
-            .sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_TENSOR_CREATE_INFO_ARM,
-            .pNext = nullptr,
-            .handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID,
-        };
-
-        VkTensorCreateInfoARM tensorInfo = 
-        {
-            .sType = VK_STRUCTURE_TYPE_TENSOR_CREATE_INFO_ARM,
-            .pNext = &externalInfo,
-            .flags = 0,
-            .pDescription = &targetTensor.tensorDescription,
-            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-            .queueFamilyIndexCount = 0,
-            .pQueueFamilyIndices = nullptr
-        };
-
-        if (vkCreateTensorARM(vulkan.m_VulkanDevice, &tensorInfo, nullptr, &targetTensor.tensor) != VK_SUCCESS)
-        {
-            return false;
-        }
-
-        // TENSOR MEMORY REQUIREMENTS //
-
-#if 0
-        VkMemoryDedicatedAllocateInfoTensorARM dedicatedInfo = 
-        {
-            .sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO_TENSOR_ARM,
-            .pNext = nullptr,
-            .tensor = targetTensor.tensor
-        };
-#endif
-
-#if 0
-        VkTensorMemoryRequirementsInfoARM memReqInfo =
-        {
-            .sType = VK_STRUCTURE_TYPE_TENSOR_MEMORY_REQUIREMENTS_INFO_ARM,
-            .pNext = nullptr,
-            .tensor = targetTensor.tensor
-        };
-
-        VkMemoryRequirements2 memReq = { VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2 };
-        vkGetTensorMemoryRequirementsARM(vulkan.m_VulkanDevice, &memReqInfo, &memReq);
-#else
-
-        VkDeviceTensorMemoryRequirementsARM deviceMemReqInfo = 
-        {
-            .sType = VK_STRUCTURE_TYPE_DEVICE_TENSOR_MEMORY_REQUIREMENTS_ARM,
-            .pNext = nullptr,
-            .pCreateInfo = &tensorInfo
-        };
-        VkMemoryRequirements2 memReq = { VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2 };
-        vkGetDeviceTensorMemoryRequirementsARM(vulkan.m_VulkanDevice, &deviceMemReqInfo, &memReq);
-#endif
-
-        // TENSOR ALIASED BUFFER //
-
-        LOGI("Creating Tensor Aliased Buffer - Tensor Size: %d - Buffer Size: %d", memReq.memoryRequirements.size, bufferSize);
-
-        // Create buffer with aliasing usage
-        VkBufferCreateInfo bufferInfo = 
-        {
-            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-            .pNext = nullptr,
-            .flags = 0,
-            .size = bufferSize,
-            .usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT/* | VK_BUFFER_USAGE_2_DATA_GRAPH_FOREIGN_DESCRIPTOR_BIT_ARM*/,
-            .sharingMode = VK_SHARING_MODE_EXCLUSIVE
-        };
-
-        if (vkCreateBuffer(vulkan.m_VulkanDevice, &bufferInfo, nullptr, &targetTensor.aliasedBuffer) != VK_SUCCESS)
-        {
-            return false;
-        }
-
-        // TENSOR MEMORY //
-
-        LOGI("Allocating Tensor Memory");
-
-        VkExportMemoryAllocateInfo exportAllocInfo =
-        {
-            .sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO,
-            .pNext = nullptr,
-            .handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID,
-        };
-
-        VkMemoryRequirements bufferMemReq = { VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2 };
-        vkGetBufferMemoryRequirements(vulkan.m_VulkanDevice, targetTensor.aliasedBuffer, &bufferMemReq);
-
-        VkMemoryAllocateInfo allocInfo = 
-        {
-            .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-            .pNext = &exportAllocInfo,
-            .allocationSize = bufferMemReq.size,
-            .memoryTypeIndex = FindMemoryType(vulkan.m_VulkanGpu, bufferMemReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
-        };
-
-        if (vkAllocateMemory(vulkan.m_VulkanDevice, &allocInfo, nullptr, &targetTensor.tensorMemory) != VK_SUCCESS)
-        {
-            return false;
-        }
-
-        VkBindTensorMemoryInfoARM bindInfo = 
-        {
-            .sType = VK_STRUCTURE_TYPE_BIND_TENSOR_MEMORY_INFO_ARM,
-            .pNext = nullptr,
-            .tensor = targetTensor.tensor,
-            .memory = targetTensor.tensorMemory,
-            .memoryOffset = 0
-        };
-
-        LOGI("Binding Tensor Memory");
-
-        if(vkBindTensorMemoryARM(vulkan.m_VulkanDevice, 1, &bindInfo) != VK_SUCCESS)
-        {
-            return false;
-        }
-
-        LOGI("Binding Aliased Buffer Memory");
-
-        if (vkBindBufferMemory(vulkan.m_VulkanDevice, targetTensor.aliasedBuffer, targetTensor.tensorMemory, 0) != VK_SUCCESS)
-        {
-            return false;
-        }
-
-        // TENSOR VIEW //
-
-        LOGI("Creating Tensor View");
-
-        VkTensorViewCreateInfoARM viewInfo = 
-        {
-            .sType = VK_STRUCTURE_TYPE_TENSOR_VIEW_CREATE_INFO_ARM,
-            .pNext = nullptr,
-            .flags = 0,
-            .tensor = targetTensor.tensor,
-            .format = targetTensor.tensorDescription.format
-        };
-
-        if (vkCreateTensorViewARM(vulkan.m_VulkanDevice, &viewInfo, nullptr, &targetTensor.tensorView) != VK_SUCCESS)
-        {
-            return false;
-        }
-
-        return true;
-    };
-
-    if (!CreateTensor(m_InputTensor))
+    if (!m_tensor_resources.Initialize(
+        vulkan.m_VulkanDevice,
+        vulkan.m_VulkanGpu,
+        vulkan.m_VulkanDataGraphProcessingEngine,
+        m_InputTensor,
+        m_OutputTensor,
+        m_QNNMaxPortIndex))
     {
         return false;
     }
-
-    if (!CreateTensor(m_OutputTensor))
-    {
-        return false;
-    }
-
-    LOGI("Creating Tensors Descriptor Pool");
-
-    VkDataGraphProcessingEngineCreateInfoARM engineInfo = {};
-    VkDescriptorPoolCreateInfo               descPoolInfo = {};
-
-    engineInfo.sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PROCESSING_ENGINE_CREATE_INFO_ARM;
-    engineInfo.processingEngineCount = 1;
-    engineInfo.pProcessingEngines = &vulkan.m_VulkanDataGraphProcessingEngine;
-
-    VkDescriptorPoolSize pool = {};
-
-    pool.type = VK_DESCRIPTOR_TYPE_TENSOR_ARM;
-    pool.descriptorCount = m_QNNMaxPortIndex + 1;
-
-    descPoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    descPoolInfo.pNext = &engineInfo;
-    descPoolInfo.maxSets = 1;
-    descPoolInfo.poolSizeCount = 1;
-    descPoolInfo.pPoolSizes = &pool;
-    if (vkCreateDescriptorPool(vulkan.m_VulkanDevice, &descPoolInfo, NULL, &m_TensorDescriptorPool) != VK_SUCCESS)
-    {
-        return false;
-    }
-
-    // TENSOR DESCRIPTOR SET LAYOUT //
-
-    LOGI("Creating Tensor Descriptor Set Layout");
-
-    VkDescriptorSetLayoutCreateInfo descLayoutInfo = {};
-    std::array< VkDescriptorSetLayoutBinding, 2> bindings = {};
-
-    bindings[0].binding = m_InputTensor.portBindingIndex;
-    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_TENSOR_ARM;
-    bindings[0].descriptorCount = 1;
-    bindings[0].stageFlags = VK_SHADER_STAGE_ALL;
-
-    bindings[1].binding = m_OutputTensor.portBindingIndex;
-    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_TENSOR_ARM;
-    bindings[1].descriptorCount = 1;
-    bindings[1].stageFlags = VK_SHADER_STAGE_ALL;
-
-    descLayoutInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    descLayoutInfo.pNext        = NULL;
-    descLayoutInfo.flags        = 0;
-    descLayoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-    descLayoutInfo.pBindings    = bindings.data();
-
-    if (vkCreateDescriptorSetLayout(vulkan.m_VulkanDevice, &descLayoutInfo, NULL, &m_TensorDescriptorSetLayout) != VK_SUCCESS)
-    {
-        return false;
-    }
-
-    // TENSOR DESCRIPTOR SETS //
-
-    LOGI("Creating Tensor Descriptor Sets");
-
-    // Allocate Descriptor Sets:
-    VkDescriptorSetAllocateInfo info = {};
-
-    info.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    info.descriptorPool     = m_TensorDescriptorPool;
-    info.descriptorSetCount = 1;
-    info.pSetLayouts        = &m_TensorDescriptorSetLayout;
-
-    if (vkAllocateDescriptorSets(vulkan.m_VulkanDevice, &info, &m_TensorDescriptorSet) != VK_SUCCESS)
-    {
-        return false;
-    }
-
-    // UPDATE/BIND TENSOR DESCRIPTOR SETS //
-
-    LOGI("Updating Tensor Descriptor Sets");
-
-    //Bind tensors to descriptor set
-    VkWriteDescriptorSet           write[2];
-    VkWriteDescriptorSetTensorARM  tensorWrite[2];
-
-    tensorWrite[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_TENSOR_ARM;
-    tensorWrite[0].pNext = NULL;
-    tensorWrite[0].tensorViewCount = 1;
-    tensorWrite[0].pTensorViews = &m_InputTensor.tensorView;
-
-    tensorWrite[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_TENSOR_ARM;
-    tensorWrite[1].pNext = NULL;
-    tensorWrite[1].tensorViewCount = 1;
-    tensorWrite[1].pTensorViews = &m_OutputTensor.tensorView;
-
-    write[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write[0].pNext = &tensorWrite[0];
-    write[0].dstBinding = m_InputTensor.portBindingIndex;
-    write[0].descriptorCount = 1;
-    write[0].descriptorType = VK_DESCRIPTOR_TYPE_TENSOR_ARM;
-    write[0].dstSet = m_TensorDescriptorSet;
-    write[0].dstArrayElement = 0;
-    write[0].pBufferInfo = NULL;
-    write[0].pImageInfo = NULL;
-    write[0].pTexelBufferView = NULL;
-
-    write[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write[1].pNext = &tensorWrite[1];
-    write[1].dstBinding = m_OutputTensor.portBindingIndex;
-    write[1].descriptorCount = 1;
-    write[1].descriptorType = VK_DESCRIPTOR_TYPE_TENSOR_ARM;
-    write[1].dstSet = m_TensorDescriptorSet;
-    write[1].dstArrayElement = 0;
-    write[1].pBufferInfo = NULL;
-    write[1].pImageInfo = NULL;
-    write[1].pTexelBufferView = NULL;
-
-    vkUpdateDescriptorSets(vulkan.m_VulkanDevice, 2, write, 0, NULL);
-
-    LOGI("Tensors Objects Created!");
 
     return true;
 }
@@ -661,51 +364,47 @@ bool Application::CreateGraphPipeline()
         }
     }
 
-    LOGI("Creating Pipeline Cache from Model...");
+    LOGI("Validating model cache blob...");
 
-    VkPipelineCacheCreateInfo cacheInfo = 
-    {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .initialDataSize = modelData.size(),
-        .pInitialData = modelData.data()
-    };
-
-    if (vkCreatePipelineCache(vulkan.m_VulkanDevice, &cacheInfo, nullptr, &m_GraphPipelineInstance.pipelineCache) != VK_SUCCESS)
+    uint32_t cache_version = 0;
+    if (!m_QCOM_data_graph_model.ValidateModelCacheBlob(modelData, cache_version))
     {
         return false;
     }
 
+    LOGI("QCOM data-graph cache validated. CacheVersion=%u", cache_version);
+
+    LOGI("Creating Pipeline Cache from Model...");
+
+    if(!m_data_graph_pipeline.CreatePipelineCacheFromBlob(
+        vulkan.m_VulkanDevice,
+        modelData,
+        m_GraphPipelineInstance.pipelineCache))
+    { 
+        return false;
+    }
+
     LOGI("Creating Graph Pipeline Layout...");
-
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo = 
-    {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-        .setLayoutCount = 1,
-        .pSetLayouts = &m_TensorDescriptorSetLayout,
-        .pushConstantRangeCount = 0,
-        .pPushConstantRanges = nullptr
-    };
-
-    if (vkCreatePipelineLayout(vulkan.m_VulkanDevice, &pipelineLayoutInfo, nullptr, &m_GraphPipelineInstance.pipelineLayout) != VK_SUCCESS)
+    
+    if (!m_data_graph_pipeline.CreatePipelineLayout(
+        vulkan.m_VulkanDevice,
+        m_tensor_resources.GetResources().tensor_descriptor_set_layout,
+        m_GraphPipelineInstance.pipelineLayout))
     {
         return false;
     }
 
     LOGI("Creating Graph Pipeline...");
 
-    VkDataGraphPipelineResourceInfoARM resourceInfos[2];
+    std::array< VkDataGraphPipelineResourceInfoARM, 2> resourceInfos;
 
     resourceInfos[0].sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_RESOURCE_INFO_ARM;
     resourceInfos[0].binding = m_QNNInputPortBinding; // Same as the input tensor
-    resourceInfos[0].pNext = &m_InputTensor.tensorDescription;
+    resourceInfos[0].pNext = &m_InputTensor.tensor_description;
 
     resourceInfos[1].sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_RESOURCE_INFO_ARM;
     resourceInfos[1].binding = m_QNNOutputPortBinding; // Same as the output tensor
-    resourceInfos[1].pNext = &m_OutputTensor.tensorDescription;
+    resourceInfos[1].pNext = &m_OutputTensor.tensor_description;
 
     ////////////////////
     // IMPORTANT NOTE // These values should be read from the file identifier!!!
@@ -716,150 +415,39 @@ bool Application::CreateGraphPipeline()
     uint8_t  qnnGraphId[32];
     std::memcpy(qnnGraphId, &graphId, qnnGraphIdSize);
 
-    ////////////////////
-    ////////////////////
-    ////////////////////
-    
-    VkDataGraphProcessingEngineCreateInfoARM engineInfo = { VK_STRUCTURE_TYPE_DATA_GRAPH_PROCESSING_ENGINE_CREATE_INFO_ARM };
-    engineInfo.processingEngineCount = 1;
-    engineInfo.pProcessingEngines = &vulkan.m_VulkanDataGraphProcessingEngine;
-
-    VkDataGraphPipelineIdentifierCreateInfoARM identifier = { VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_IDENTIFIER_CREATE_INFO_ARM };
-    identifier.pNext = &engineInfo;
-    identifier.identifierSize = qnnGraphIdSize;
-    identifier.pIdentifier = qnnGraphId;
-
-    VkDataGraphPipelineShaderModuleCreateInfoARM moduleInfo = { VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SHADER_MODULE_CREATE_INFO_ARM };
-    moduleInfo.pNext = &identifier;
-    moduleInfo.module = VK_NULL_HANDLE;
-    moduleInfo.pName = "";
-
-    VkDataGraphPipelineCreateInfoARM pipelineInfo = 
-    {
-        .sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_CREATE_INFO_ARM,
-        .pNext = &moduleInfo,
-        .flags = 0,
-        .layout = m_GraphPipelineInstance.pipelineLayout,
-        .resourceInfoCount = 2,
-        .pResourceInfos = resourceInfos
-    };
-
-    if (vkCreateDataGraphPipelinesARM(
-        vulkan.m_VulkanDevice, 
-        VK_NULL_HANDLE, 
-        m_GraphPipelineInstance.pipelineCache, 
-        1, 
-        &pipelineInfo, 
-        nullptr, 
-        &m_GraphPipelineInstance.graphPipeline) != VK_SUCCESS)
+    if (!m_data_graph_pipeline.CreateGraphPipelineArmIdentifierPath(
+        vulkan.m_VulkanDevice,
+        vulkan.m_VulkanDataGraphProcessingEngine,
+        m_GraphPipelineInstance.pipelineLayout,
+        m_GraphPipelineInstance.pipelineCache,
+        resourceInfos.data(),
+        static_cast<uint32_t>(resourceInfos.size()),
+        qnnGraphId,
+        qnnGraphIdSize,
+        m_GraphPipelineInstance.graphPipeline))
     {
         return false;
     }
 
     LOGI("Creating Graph Pipeline Session...");
 
-    VkDataGraphPipelineSessionCreateInfoARM sessionInfo = 
-    {
-        .sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_CREATE_INFO_ARM,
-        .pNext = nullptr,
-        .flags = 0,
-        .dataGraphPipeline = m_GraphPipelineInstance.graphPipeline
-    };
-
-    if (vkCreateDataGraphPipelineSessionARM(
-        vulkan.m_VulkanDevice, 
-        &sessionInfo, 
-        nullptr, 
-        &m_GraphPipelineInstance.graphSession) != VK_SUCCESS)
-    {
-        return false;
-    }
-
-    LOGI("Getting Graph Session Binding Points Requirements...");
-
-    VkDataGraphPipelineSessionBindPointRequirementsInfoARM bindReqsInfo = {};
-    uint32_t                                               bindReqsCount = 0;
-
-    bindReqsInfo.sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_REQUIREMENTS_INFO_ARM;
-    bindReqsInfo.session = m_GraphPipelineInstance.graphSession;
-
-    if (vkGetDataGraphPipelineSessionBindPointRequirementsARM(vulkan.m_VulkanDevice, &bindReqsInfo, &bindReqsCount, NULL) != VK_SUCCESS)
-    {
-        return false;
-    }
-
-    std::vector<VkDataGraphPipelineSessionBindPointRequirementARM> bindReqs(bindReqsCount);
-    for (uint32_t i = 0; i < bindReqsCount; i++)
-    {
-        bindReqs[i].sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_REQUIREMENT_ARM;
-    }
-
-    if (vkGetDataGraphPipelineSessionBindPointRequirementsARM(vulkan.m_VulkanDevice, &bindReqsInfo, &bindReqsCount, bindReqs.data()) != VK_SUCCESS)
+    if (!m_data_graph_pipeline.CreateSession(
+        vulkan.m_VulkanDevice,
+        m_GraphPipelineInstance.graphPipeline,
+        m_GraphPipelineInstance.graphSession))
     {
         return false;
     }
 
     LOGI("Binding Graph Session Memory...");
 
-    uint32_t memCount = 0;
-    for (uint32_t i = 0; i < bindReqsCount; i++)
+    if (!m_data_graph_pipeline.AllocateAndBindSessionMemory(
+        vulkan.m_VulkanDevice,
+        vulkan.m_VulkanGpu,
+        m_GraphPipelineInstance.graphSession, m_GraphPipelineInstance.sessionMemory))
     {
-        m_GraphPipelineInstance.sessionMemory.resize(m_GraphPipelineInstance.sessionMemory.size() + bindReqs[i].numObjects);
-        switch (bindReqs[i].bindPointType) 
-        {
-            case(VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TYPE_MEMORY_ARM):
-            {
-                LOGI("*** Bind Point (VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TYPE_MEMORY_ARM) with %d objects", bindReqs[i].numObjects);
-                for (uint32_t j = 0; j < bindReqs[i].numObjects; j++)
-                {
-                    VkDataGraphPipelineSessionMemoryRequirementsInfoARM memReqsInfo = { VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_MEMORY_REQUIREMENTS_INFO_ARM };
-                    memReqsInfo.session     = m_GraphPipelineInstance.graphSession;
-                    memReqsInfo.bindPoint   = bindReqs[i].bindPoint;
-                    memReqsInfo.objectIndex = j;
-
-                    VkMemoryRequirements2 memReqs = { VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2 };
-                    vkGetDataGraphPipelineSessionMemoryRequirementsARM(vulkan.m_VulkanDevice, &memReqsInfo, &memReqs);
-
-                    VkMemoryAllocateInfo info = { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
-                    info.pNext = nullptr;
-                    info.allocationSize = memReqs.memoryRequirements.size;
-                    // info.memoryTypeIndex = 0; // should query the indices to find most appropiate one
-                    info.memoryTypeIndex = FindMemoryType(vulkan.m_VulkanGpu, memReqs.memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-                    LOGI("***     Bind Object [%d]", j);
-                    LOGI("***         Binding Point [%d]", bindReqs[i].bindPoint);
-                    LOGI("***         Allocation Size [%d]", info.allocationSize);
-                    LOGI("***         Memory Type Index [%d]", info.memoryTypeIndex);
-
-                    if (vkAllocateMemory(vulkan.m_VulkanDevice, &info, nullptr, &m_GraphPipelineInstance.sessionMemory[memCount]) != VK_SUCCESS)
-                    {
-                        return false;
-                    }
-
-                    VkBindDataGraphPipelineSessionMemoryInfoARM bindMem;
-                    bindMem.sType       = VK_STRUCTURE_TYPE_BIND_DATA_GRAPH_PIPELINE_SESSION_MEMORY_INFO_ARM;
-                    bindMem.session     = m_GraphPipelineInstance.graphSession;
-                    bindMem.bindPoint   = bindReqs[i].bindPoint;
-                    bindMem.objectIndex = j;
-                    bindMem.memory      = m_GraphPipelineInstance.sessionMemory[memCount];
-
-                    if (vkBindDataGraphPipelineSessionMemoryARM(vulkan.m_VulkanDevice, 1, &bindMem) != VK_SUCCESS)
-                    {
-                        return false;
-                    }
-
-                    memCount++;
-                }
-
-                break;
-            }
-            default:
-            {
-                // Error unhandled / unexpected memory type
-                return false;
-            }
-        }
-    } 
+        return false;
+    }
 
     LOGI("Graph Pipeline Created!");
 
@@ -871,68 +459,70 @@ void Application::CopyImageToTensor(
     CommandListVulkan&         cmdList,
     const TextureVulkan&       srcImage,
     VkImageLayout              currentLayout, 
-    const GraphPipelineTensor& tensorBinding)
+    const Ml::GraphPipelineTensor& tensorBinding)
 //-----------------------------------------------------------------------------
 {
-    VkImageMemoryBarrier2 imageBarrierToTransfer = 
-    {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-        .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-        .srcAccessMask = VK_ACCESS_2_MEMORY_READ_BIT,
-        .dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-        .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
-        .oldLayout = currentLayout,
-        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = srcImage.GetVkImage(),
-        .subresourceRange = {
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1
-        }
-    };
+    // Transition image -> TRANSFER_SRC
+    VkImageMemoryBarrier2KHR toTransfer = {};
+    toTransfer.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR;
+    toTransfer.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT_KHR;
+    toTransfer.srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT_KHR | VK_ACCESS_2_MEMORY_READ_BIT_KHR;
+    toTransfer.dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR;
+    toTransfer.dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT_KHR;
+    toTransfer.oldLayout = currentLayout;
+    toTransfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    toTransfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toTransfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toTransfer.image = srcImage.GetVkImage();
+    toTransfer.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    toTransfer.subresourceRange.baseMipLevel = 0;
+    toTransfer.subresourceRange.levelCount = 1;
+    toTransfer.subresourceRange.baseArrayLayer = 0;
+    toTransfer.subresourceRange.layerCount = 1;
 
-    VkDependencyInfo depInfo = 
-    {
-        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers = &imageBarrierToTransfer
-    };
+    VkDependencyInfoKHR dep = {};
+    dep.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR;
+    dep.imageMemoryBarrierCount = 1;
+    dep.pImageMemoryBarriers = &toTransfer;
 
-    vkCmdPipelineBarrier2KHR(cmdList.m_VkCommandBuffer, &depInfo);
+    vkCmdPipelineBarrier2KHR(cmdList.m_VkCommandBuffer, &dep);
 
-    VkBufferImageCopy copyRegion = 
-    {
-        .bufferOffset = 0,
-        .bufferRowLength = 0,
-        .bufferImageHeight = 0,
-        .imageSubresource = {
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .mipLevel = 0,
-            .baseArrayLayer = 0,
-            .layerCount = 1
-        },
-        .imageOffset = {0, 0, 0},
-        .imageExtent = {srcImage.Width, srcImage.Height, 1}
-    };
-    
+    // Copy image -> buffer
+    VkBufferImageCopy region = {};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;
+    region.bufferImageHeight = 0;
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = 1;
+    region.imageOffset = { 0, 0, 0 };
+    region.imageExtent = { srcImage.Width, srcImage.Height, 1 };
+
     vkCmdCopyImageToBuffer(
-        cmdList.m_VkCommandBuffer, 
-        srcImage.GetVkImage(), 
+        cmdList.m_VkCommandBuffer,
+        srcImage.GetVkImage(),
         VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-        tensorBinding.aliasedBuffer, 
-        1, 
-        &copyRegion);
+        tensorBinding.aliased_buffer,
+        1,
+        &region);
 
-    // Transition image back to original layout
-    std::swap(imageBarrierToTransfer.oldLayout, imageBarrierToTransfer.newLayout);
-    std::swap(imageBarrierToTransfer.srcAccessMask, imageBarrierToTransfer.dstAccessMask);
-    std::swap(imageBarrierToTransfer.srcStageMask, imageBarrierToTransfer.dstStageMask);
+    // Transition image back to original layout for future reads (typically SHADER_READ_ONLY)
+    VkImageMemoryBarrier2KHR fromTransfer = {};
+    fromTransfer.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR;
+    fromTransfer.srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR;
+    fromTransfer.srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT_KHR;
+    fromTransfer.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT_KHR;
+    fromTransfer.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT_KHR | VK_ACCESS_2_MEMORY_WRITE_BIT_KHR;
+    fromTransfer.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    fromTransfer.newLayout = currentLayout;
+    fromTransfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    fromTransfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    fromTransfer.image = srcImage.GetVkImage();
+    fromTransfer.subresourceRange = toTransfer.subresourceRange;
 
-    vkCmdPipelineBarrier2KHR(cmdList.m_VkCommandBuffer, &depInfo);
+    dep.pImageMemoryBarriers = &fromTransfer;
+    vkCmdPipelineBarrier2KHR(cmdList.m_VkCommandBuffer, &dep);
 }
 
 //-----------------------------------------------------------------------------
@@ -940,70 +530,70 @@ void Application::CopyTensorToImage(
     CommandListVulkan&         cmdList,
     const TextureVulkan&       dstImage,
     VkImageLayout              currentLayout, 
-    const GraphPipelineTensor& tensorBinding)
+    const Ml::GraphPipelineTensor& tensorBinding)
 //-----------------------------------------------------------------------------
 {
-    const auto& synchronization2_extension = GetVulkan()->GetExtension<ExtensionLib::Ext_VK_KHR_synchronization2>();
-    assert(synchronization2_extension != nullptr);
+    // Transition image -> TRANSFER_DST
+    VkImageMemoryBarrier2KHR toTransfer = {};
+    toTransfer.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR;
+    toTransfer.srcStageMask        = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT_KHR;
+    toTransfer.srcAccessMask       = VK_ACCESS_2_MEMORY_WRITE_BIT_KHR | VK_ACCESS_2_MEMORY_READ_BIT_KHR;
+    toTransfer.dstStageMask        = VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR;
+    toTransfer.dstAccessMask       = VK_ACCESS_2_TRANSFER_WRITE_BIT_KHR;
+    toTransfer.oldLayout           = currentLayout;
+    toTransfer.newLayout           = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    toTransfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toTransfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toTransfer.image               = dstImage.GetVkImage();
+    toTransfer.subresourceRange.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+    toTransfer.subresourceRange.baseMipLevel   = 0;
+    toTransfer.subresourceRange.levelCount     = 1;
+    toTransfer.subresourceRange.baseArrayLayer = 0;
+    toTransfer.subresourceRange.layerCount     = 1;
 
-    VkImageMemoryBarrier2 imageBarrierToTransfer = 
-    {
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
-        .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-        .srcAccessMask = VK_ACCESS_2_MEMORY_WRITE_BIT,
-        .dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-        .dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
-        .oldLayout = currentLayout,
-        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = dstImage.GetVkImage(),
-        .subresourceRange = {
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1
-        }
-    };
+    VkDependencyInfoKHR dep = {};
+    dep.sType                  = VK_STRUCTURE_TYPE_DEPENDENCY_INFO_KHR;
+    dep.imageMemoryBarrierCount = 1;
+    dep.pImageMemoryBarriers    = &toTransfer;
 
-    VkDependencyInfo depInfo = 
-    {
-        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-        .imageMemoryBarrierCount = 1,
-        .pImageMemoryBarriers = &imageBarrierToTransfer
-    };
+    vkCmdPipelineBarrier2KHR(cmdList.m_VkCommandBuffer, &dep);
 
-    vkCmdPipelineBarrier2KHR(cmdList.m_VkCommandBuffer, &depInfo);
-
-    VkBufferImageCopy copyRegion = 
-    {
-        .bufferOffset = 0,
-        .bufferRowLength = 0,
-        .bufferImageHeight = 0,
-        .imageSubresource = {
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .mipLevel = 0,
-            .baseArrayLayer = 0,
-            .layerCount = 1
-        },
-        .imageOffset = {0, 0, 0},
-        .imageExtent = {dstImage.Width, dstImage.Height, 1}
-    };
+    // Copy buffer -> image
+    VkBufferImageCopy region = {};
+    region.bufferOffset                    = 0;
+    region.bufferRowLength                 = 0;
+    region.bufferImageHeight               = 0;
+    region.imageSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel       = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount     = 1;
+    region.imageOffset                     = { 0, 0, 0 };
+    region.imageExtent                     = { dstImage.Width, dstImage.Height, 1 };
 
     vkCmdCopyBufferToImage(
-        cmdList.m_VkCommandBuffer, 
-        tensorBinding.aliasedBuffer, 
-        dstImage.GetVkImage(), 
+        cmdList.m_VkCommandBuffer,
+        tensorBinding.aliased_buffer,
+        dstImage.GetVkImage(),
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        1, 
-        &copyRegion);
+        1,
+        &region);
 
-    std::swap(imageBarrierToTransfer.oldLayout, imageBarrierToTransfer.newLayout);
-    std::swap(imageBarrierToTransfer.srcAccessMask, imageBarrierToTransfer.dstAccessMask);
-    std::swap(imageBarrierToTransfer.srcStageMask, imageBarrierToTransfer.dstStageMask);
+    // Transition image back (shader read for blit sampling)
+    VkImageMemoryBarrier2KHR fromTransfer = {};
+    fromTransfer.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2_KHR;
+    fromTransfer.srcStageMask        = VK_PIPELINE_STAGE_2_TRANSFER_BIT_KHR;
+    fromTransfer.srcAccessMask       = VK_ACCESS_2_TRANSFER_WRITE_BIT_KHR;
+    fromTransfer.dstStageMask        = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT_KHR;
+    fromTransfer.dstAccessMask       = VK_ACCESS_2_MEMORY_READ_BIT_KHR | VK_ACCESS_2_MEMORY_WRITE_BIT_KHR;
+    fromTransfer.oldLayout           = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    fromTransfer.newLayout           = currentLayout;
+    fromTransfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    fromTransfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    fromTransfer.image               = dstImage.GetVkImage();
+    fromTransfer.subresourceRange    = toTransfer.subresourceRange;
 
-    vkCmdPipelineBarrier2KHR(cmdList.m_VkCommandBuffer, &depInfo);
+    dep.pImageMemoryBarriers = &fromTransfer;
+    vkCmdPipelineBarrier2KHR(cmdList.m_VkCommandBuffer, &dep);
 }
 
 //-----------------------------------------------------------------------------
@@ -1205,6 +795,11 @@ bool Application::InitUniforms()
         return false;
     }
     
+    if (!CreateUniformBuffer(pVulkan, m_BlitFragUniform))
+    {
+        return false;
+    }
+    
     return true;
 }
 
@@ -1214,7 +809,7 @@ bool Application::InitAllRenderPasses()
 {
     Vulkan& vulkan = *GetVulkan();
 
-    //                                       ColorInputUsage |               ClearDepthRenderPass | ColorOutputUsage |                     DepthOutputUsage |              ClearColor
+    //                                             ColorInputUsage |               ClearDepthRenderPass | ColorOutputUsage |                     DepthOutputUsage |              ClearColor
     m_RenderPassData[RP_SCENE].RenderPassSetup = { RenderPassInputUsage::Clear,    true,                  RenderPassOutputUsage::StoreReadOnly,  RenderPassOutputUsage::Store,   {}};
     m_RenderPassData[RP_HUD].RenderPassSetup   = { RenderPassInputUsage::Clear,    false,                 RenderPassOutputUsage::StoreReadOnly,  RenderPassOutputUsage::Discard, {}};
     m_RenderPassData[RP_BLIT].RenderPassSetup  = { RenderPassInputUsage::DontCare, true,                  RenderPassOutputUsage::Present,        RenderPassOutputUsage::Discard, {}};
@@ -1224,7 +819,7 @@ bool Application::InitAllRenderPasses()
     auto swapChainDepthFormat   = vulkan.m_SwapchainDepth.format;
 
     LOGI("******************************");
-    LOGI("Initializing Render Passes... ");
+    LOGI("Initializing Render Passes %d - %d... ", static_cast<int>(swapChainColorFormat[0]), static_cast<int>(vulkan.m_SurfaceColorSpace));
     LOGI("******************************");
 
     for (uint32_t whichPass = 0; whichPass < RP_BLIT; whichPass++)
@@ -1403,7 +998,6 @@ bool Application::LoadMeshObjects()
         return shaderMaterial;
     };
 
-
     const auto loaderFlags = 0; // No instancing
     const bool ignoreTransforms = (loaderFlags & DrawableLoader::LoaderFlags::IgnoreHierarchy) != 0;
 
@@ -1421,9 +1015,8 @@ bool Application::LoadMeshObjects()
             m_SceneDrawables,
             loaderFlags))
     {
-        LOGE("Error Loading the museum gltf file");
-        LOGI("Please verify if you have all required assets on the sample media folder");
-        LOGI("If you are running on Android, don't forget to run the `02_CopyMediaToDevice.bat` script to copy all media files into the device memory");
+        LOGE("Error Loading the gltf file");
+        LOGI("Please verify if you have all required assets on the media folder");
         return false;
     }
 
@@ -1432,7 +1025,6 @@ bool Application::LoadMeshObjects()
         const auto& camera = meshCameraProcessor.m_cameras[0];
         m_Camera.SetPosition(camera.Position, camera.Orientation);
     }
-
 
     LOGI("*********************");
     LOGI("Creating Quad mesh...");
@@ -1457,6 +1049,10 @@ bool Application::LoadMeshObjects()
         },
         [this](const std::string& bufferName) -> PerFrameBufferVulkan
         {
+            if (bufferName == "Params")
+            {
+                return { m_BlitFragUniform.buf.GetVkBuffer() };
+            }
             return {};
         }
         );
@@ -1664,35 +1260,37 @@ void Application::UpdateGui()
             ImGui::Checkbox("Upscaling Enabled", &m_ShouldUpscale);
             ImGui::EndDisabled();
 
-            ImGui::Separator();
-
-            ImGui::DragFloat3("Sun Dir", &m_LightUniformData.LightDirection.x, 0.01f, -1.0f, 1.0f);
-            ImGui::DragFloat3("Sun Color", &m_LightUniformData.LightColor.x, 0.01f, 0.0f, 1.0f);
-            ImGui::DragFloat("Sun Intensity", &m_LightUniformData.LightColor.w, 0.1f, 0.0f, 100.0f);
-            ImGui::DragFloat3("Ambient Color", &m_LightUniformData.AmbientColor.x, 0.01f, 0.0f, 1.0f);
-
-            for (int i = 0; i < NUM_SPOT_LIGHTS; i++)
+            if (ImGui::CollapsingHeader("Sun Light", ImGuiTreeNodeFlags_Framed))
             {
-                std::string childName = std::string("Spot Light ").append(std::to_string(i+1));
-                ImGui::TextColored(ImVec4(1, 1, 0, 1), "%s", childName.c_str());
+                ImGui::DragFloat3("Sun Dir", &m_LightUniformData.LightDirection.x, 0.01f, -1.0f, 1.0f);
+                ImGui::DragFloat3("Sun Color", &m_LightUniformData.LightColor.x, 0.01f, 0.0f, 1.0f);
+                ImGui::DragFloat("Sun Intensity", &m_LightUniformData.LightColor.w, 0.1f, 0.0f, 100.0f);
+                ImGui::DragFloat3("Ambient Color", &m_LightUniformData.AmbientColor.x, 0.01f, 0.0f, 1.0f);
+            }
 
-                if (ImGui::CollapsingHeader(childName.c_str(), ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_Framed))
+            if (ImGui::CollapsingHeader("Spot Lights", ImGuiTreeNodeFlags_Framed))
+            {
+                for (int i = 0; i < NUM_SPOT_LIGHTS; i++)
                 {
-                    ImGui::PushID(i);
+                    std::string childName = std::string("Spot Light ").append(std::to_string(i + 1));
+                    ImGui::TextColored(ImVec4(1, 1, 0, 1), "%s", childName.c_str());
 
-                    ImGui::DragFloat3("Pos", &m_LightUniformData.SpotLights_pos[i].x, 0.1f);
-                    ImGui::DragFloat3("Dir", &m_LightUniformData.SpotLights_dir[i].x, 0.01f, -1.0f, 1.0f);
-                    ImGui::DragFloat3("Color", &m_LightUniformData.SpotLights_color[i].x, 0.01f, 0.0f, 1.0f);
-                    ImGui::DragFloat("Intensity", &m_LightUniformData.SpotLights_color[i].w, 0.1f, 0.0f, 100.0f);
+                    if (ImGui::CollapsingHeader(childName.c_str(), ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_Framed))
+                    {
+                        ImGui::PushID(i);
 
-                    ImGui::PopID();
+                        ImGui::DragFloat3("Pos", &m_LightUniformData.SpotLights_pos[i].x, 0.1f);
+                        ImGui::DragFloat3("Dir", &m_LightUniformData.SpotLights_dir[i].x, 0.01f, -1.0f, 1.0f);
+                        ImGui::DragFloat3("Color", &m_LightUniformData.SpotLights_color[i].x, 0.01f, 0.0f, 1.0f);
+                        ImGui::DragFloat("Intensity", &m_LightUniformData.SpotLights_color[i].w, 0.1f, 0.0f, 100.0f);
+
+                        ImGui::PopID();
+                    }
+
+                    glm::vec3 LightDirNotNormalized = m_LightUniformData.SpotLights_dir[i];
+                    LightDirNotNormalized = glm::normalize(LightDirNotNormalized);
+                    m_LightUniformData.SpotLights_dir[i] = glm::vec4(LightDirNotNormalized, 0.0f);
                 }
-
-                ImDrawList* list = ImGui::GetWindowDrawList();
-
-                glm::vec3 LightDirNotNormalized = m_LightUniformData.SpotLights_dir[i];
-                LightDirNotNormalized = glm::normalize(LightDirNotNormalized);
-                m_LightUniformData.SpotLights_dir[i] = glm::vec4(LightDirNotNormalized, 0.0f);
             }
 
             glm::vec3 LightDirNotNormalized   = m_LightUniformData.LightDirection;
@@ -1742,6 +1340,12 @@ bool Application::UpdateUniforms(uint32_t whichBuffer)
         m_LightUniformData.CameraPos         = glm::vec4(m_Camera.Position(), 0.0f);
 
         UpdateUniformBuffer(pVulkan, m_LightUniform, m_LightUniformData);
+    }
+
+    // Blit data
+    {
+        m_BlitFragUniformData.IsUpscalingActive = m_ShouldUpscale;
+        UpdateUniformBuffer(pVulkan, m_BlitFragUniform, m_BlitFragUniformData);
     }
 
     return true;
@@ -1806,7 +1410,7 @@ void Application::Render(float fltDiffTime)
         // Submit the commands to the queue.
         SubmitRenderPass(whichBuffer, RP_SCENE, pWaitSemaphores, waitDstStageMasks, { &m_RenderPassData[RP_SCENE].PassCompleteSemaphore,1 });
         pWaitSemaphores      = { &m_RenderPassData[RP_SCENE].PassCompleteSemaphore, 1 };
-        waitDstStageMasks[0] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+        waitDstStageMasks[0] = { VK_PIPELINE_STAGE_ALL_COMMANDS_BIT };
     }
 
     // Data Graph preparation + dispatch for Upscaling
@@ -1814,32 +1418,26 @@ void Application::Render(float fltDiffTime)
     {
         m_GraphPipelineCommandLists[whichBuffer].Begin();
 
-        vkCmdBindPipeline(
+        m_data_graph_dispatch.RecordDispatch(
             m_GraphPipelineCommandLists[whichBuffer].m_VkCommandBuffer,
-            VK_PIPELINE_BIND_POINT_DATA_GRAPH_ARM,
-            m_GraphPipelineInstance.graphPipeline);
-
-        vkCmdBindDescriptorSets(
-            m_GraphPipelineCommandLists[whichBuffer].m_VkCommandBuffer, 
-            VK_PIPELINE_BIND_POINT_DATA_GRAPH_ARM, 
+            m_GraphPipelineInstance.graphPipeline,
             m_GraphPipelineInstance.pipelineLayout,
-            0, 
-            1, 
-            &m_TensorDescriptorSet,
-            0,
-            NULL);
-
-        VkDataGraphPipelineDispatchInfoARM dispatchInfo;
-        dispatchInfo.sType = VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_DISPATCH_INFO_ARM;
-        dispatchInfo.flags = 0;
-
-        vkCmdDispatchDataGraphARM(
-            m_GraphPipelineCommandLists[whichBuffer].m_VkCommandBuffer, 
-            m_GraphPipelineInstance.graphSession,
-            &dispatchInfo);
+            m_tensor_resources.GetResources().tensor_descriptor_set,
+            m_GraphPipelineInstance.graphSession);
 
         m_GraphPipelineCommandLists[whichBuffer].End();
-        m_GraphPipelineCommandLists[whichBuffer].QueueSubmit(pWaitSemaphores[0], waitDstStageMasks[0], m_GraphPipelinePassCompleteSemaphore);
+
+        if (!m_data_graph_dispatch.Submit(
+            pVulkan->m_VulkanQueues[m_GraphPipelineCommandLists[whichBuffer].m_QueueIndex].Queue,
+            m_GraphPipelineCommandLists[whichBuffer].m_VkCommandBuffer,
+            pWaitSemaphores[0],
+            waitDstStageMasks[0],
+            m_GraphPipelinePassCompleteSemaphore,
+            VK_NULL_HANDLE))
+        {
+            LOGE("Data Graph dispatch failed");
+        }
+
         pWaitSemaphores      = { &m_GraphPipelinePassCompleteSemaphore, 1 };
         waitDstStageMasks[0] = { VK_PIPELINE_STAGE_ALL_COMMANDS_BIT }; // Should be VK_PIPELINE_STAGE_2_DATA_GRAPH_BIT_ARM, but need to update framework
                                                                        // to support VK_PIPELINE_STAGE_2.

@@ -1,5 +1,6 @@
-
 # Cooperative Matrix Sample
+
+![Screenshot](img/screenshot.png)
 
 This sample demonstrates the use of the *VK_KHR_cooperative_matrix* extension in Vulkan to run matrix operations using GPU‑accelerated cooperative matrix arithmetic.
 

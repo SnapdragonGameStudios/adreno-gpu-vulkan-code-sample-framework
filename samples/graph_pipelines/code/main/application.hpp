@@ -1,7 +1,7 @@
 //============================================================================================================
 //
 //
-//                  Copyright (c) 2025, Qualcomm Innovation Center, Inc. All rights reserved.
+//                  Copyright (c) 2026, Qualcomm Innovation Center, Inc. All rights reserved.
 //                              SPDX-License-Identifier: BSD-3-Clause
 //
 //============================================================================================================
@@ -11,6 +11,12 @@
 #include "memory/vulkan/uniform.hpp"
 #include "vulkan/commandBuffer.hpp"
 #include <unordered_map>
+
+#include "ml/GraphPipelineTypes.hpp"
+#include "ml/DataGraphPipeline.hpp"
+#include "ml/GraphDispatch.hpp"
+#include "ml/TensorResources.hpp"
+#include "ml/QcomDataGraphModel.hpp"
 
 #define NUM_SPOT_LIGHTS 4
 
@@ -38,6 +44,11 @@ struct ObjectFragUB
     glm::vec4   ORM;
 };
 
+struct BlitFragUB
+{
+    bool IsUpscalingActive;
+};
+
 struct LightUB
 {
     glm::mat4 ProjectionInv;
@@ -57,18 +68,6 @@ struct LightUB
 
     int Width;
     int Height;
-};
-
-struct GraphPipelineTensor
-{
-    std::array<int64_t, 3> dimensions;
-    std::array<int64_t, 3> strides;
-    VkBuffer               aliasedBuffer    = VK_NULL_HANDLE;
-    VkTensorDescriptionARM tensorDescription;
-    VkTensorARM            tensor           = VK_NULL_HANDLE;
-    VkTensorViewARM        tensorView       = VK_NULL_HANDLE;
-    VkDeviceMemory         tensorMemory     = VK_NULL_HANDLE;
-    uint32_t               portBindingIndex = -1;
 };
 
 struct GraphPipelineInstance
@@ -189,13 +188,13 @@ private:
         CommandListVulkan&         cmdList,
         const TextureVulkan&       srcImage,
         VkImageLayout              currentLayout,
-        const GraphPipelineTensor& tensorBinding);
+        const Ml::GraphPipelineTensor& tensorBinding);
 
     void CopyTensorToImage(
         CommandListVulkan&         cmdList,
         const TextureVulkan&       dstImage,
         VkImageLayout              currentLayout,
-        const GraphPipelineTensor& tensorBinding);
+        const Ml::GraphPipelineTensor& tensorBinding);
 
     void CopyImageToImageBlit(
         CommandListVulkan& cmdList,
@@ -214,6 +213,8 @@ private:
     ObjectVertUB                                              m_ObjectVertUniformData;
     UniformT<LightUB>                                         m_LightUniform;
     LightUB                                                   m_LightUniformData;
+    UniformT<BlitFragUB>                                      m_BlitFragUniform;
+    BlitFragUB                                                m_BlitFragUniformData;
     std::unordered_map<std::size_t, ObjectMaterialParameters> m_ObjectFragUniforms;
 
     // Drawables
@@ -231,13 +232,16 @@ private:
     glm::ivec2 m_RenderResolution;
     glm::ivec2 m_UpscaledResolution;
 
+    // ML types
+    Ml::DataGraphPipeline  m_data_graph_pipeline;
+    Ml::GraphDispatch      m_data_graph_dispatch;
+    Ml::TensorResources    m_tensor_resources;
+    Ml::QcomDataGraphModel m_QCOM_data_graph_model;
+
     // Graph Pipelines
     bool                            m_IsGraphPipelinesSupported = false; // Enables/disable the whole graph pipeline functionality
-    VkDescriptorPool                m_TensorDescriptorPool      = VK_NULL_HANDLE;
-    VkDescriptorSetLayout           m_TensorDescriptorSetLayout = VK_NULL_HANDLE;
-    VkDescriptorSet                 m_TensorDescriptorSet       = VK_NULL_HANDLE;
-    GraphPipelineTensor             m_InputTensor;
-    GraphPipelineTensor             m_OutputTensor;
+    Ml::GraphPipelineTensor         m_InputTensor;
+    Ml::GraphPipelineTensor         m_OutputTensor;
     GraphPipelineInstance           m_GraphPipelineInstance;
     std::vector< CommandListVulkan> m_GraphPipelineCommandLists; // Cmd buffer allocated from the Data Graph queue
     VkSemaphore                     m_GraphPipelinePassCompleteSemaphore = VK_NULL_HANDLE;

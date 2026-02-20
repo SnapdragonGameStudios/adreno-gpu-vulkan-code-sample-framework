@@ -30,10 +30,10 @@ framework\
 			imgui @ https://github.com/ocornut/imgui/archive/4f9ba19e520bea478f5cb654d37ef45e6404bd52.zip MD5:2d0aa43693cdada8abb9d49a44c1337b
 			implot @ https://github.com/epezent/implot/archive/f156599faefe316f7dd20fe6c783bf87c8bb6fd9.zip MD5:b95d158f69b1716da2cd7c17d63bdce4
 			portable-file-dialogs @ https://github.com/samhocevar/portable-file-dialogs/archive/7f852d88a480020d7f91957cbcefe514fc95000c.zip MD5:ec1fd9e86f260b99a50294b8f53f872f
-			Vulkan-Headers @ https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.4.328.zip
+			Vulkan-Headers @ https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.4.338.zip
 			glm @ https://github.com/g-truc/glm/archive/6ad79aae3eb5bf809c30bf1168171e9e55857e45.zip
 			GameSampleAssets @ https://github.com/SnapdragonStudios/game-assets-for-adreno-gpu-code-samples/archive/0ef8e70049ffd9ee4f9138b43815b21f959497d0.zip
-			volk @ https://github.com/zeux/volk/archive/1e0ec168f1726e6389b8647435a3018f0cef9428.zip
+			volk @ https://github.com/zeux/volk/archive/d34b5e0d46b28c22d69b97ee7da074b6e68d9e25.zip
 			SPIRV-Cross @ https://github.com/KhronosGroup/SPIRV-Cross/archive/7affe74d77f93a622bb5002789d5332d32e512ee.zip
 			glslang @ https://github.com/KhronosGroup/glslang/archive/3a7f78758f8faa9a6e059b09e25fc64ede7fbfb0.zip
 			json @ https://github.com/nlohmann/json/releases/download/v3.10.5/json.tar.xz MD5:4b67aba51ddf17c798e80361f527f50e

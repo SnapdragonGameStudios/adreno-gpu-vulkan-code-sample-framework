@@ -47,4 +47,7 @@ protected:
 
     int         m_MovementTouchId;
     int         m_LookaroundTouchId;
+
+    glm::vec2 m_LookDeltaPixelsAccum = glm::vec2(0.0f);
+    float     m_LookSmoothTauSec     = 0.03f;
 };

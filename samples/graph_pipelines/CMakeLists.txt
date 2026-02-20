@@ -9,6 +9,15 @@ set(CMAKE_CXX_STANDARD 20)
 
 set(CPP_SRC code/main/application.cpp
             code/main/application.hpp
+			code/main/ml/GraphPipelineTypes.hpp
+			code/main/ml/DataGraphPipeline.hpp
+			code/main/ml/DataGraphPipeline.cpp
+			code/main/ml/GraphDispatch.hpp
+			code/main/ml/GraphDispatch.cpp
+			code/main/ml/QcomDataGraphModel.hpp
+			code/main/ml/QcomDataGraphModel.cpp
+			code/main/ml/TensorResources.hpp
+			code/main/ml/TensorResources.cpp
 )
 
 #

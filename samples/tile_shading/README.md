@@ -1,5 +1,7 @@
 # Tile Shading Sample
 
+![Screenshot](img/screenshot.png)
+
 This sample demonstrates a tile-based shading technique using Vulkan, with support for the *VK_QCOM_tile_memory_heap* extension.
 
 The extension enables the application to allocate and manage tile-local memory, which is scoped to the duration of a command buffer submission and optimized for high-bandwidth, low-latency access within a tile.

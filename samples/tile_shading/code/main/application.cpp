@@ -404,7 +404,8 @@ bool Application::CreateRenderTargets()
             gRenderWidth,
             gRenderHeight,
             SceneColorType,
-            desiredDepthFormat, 
+            desiredDepthFormat,
+            nullptr,
             {}, // std::span<const TEXTURE_TYPE>
         },
         "Scene RT"))
@@ -421,6 +422,7 @@ bool Application::CreateRenderTargets()
             gRenderHeight,
             DeferredLightColorType,
             TextureFormat::UNDEFINED,
+            nullptr,
             {}, // std::span<const TEXTURE_TYPE>
         },
         "Particles RT"))
@@ -437,6 +439,7 @@ bool Application::CreateRenderTargets()
             gSurfaceHeight,
             HudColorType,
             TextureFormat::UNDEFINED,
+            nullptr,
             {}, // std::span<const TEXTURE_TYPE>
         },
         "HUD RT"))
