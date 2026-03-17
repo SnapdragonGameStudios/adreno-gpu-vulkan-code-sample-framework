@@ -41,10 +41,6 @@ Android builds require CMake version 3.25 and above, if when building Android pr
 <pre><code>sdk.dir=C\:\\Users\\yournamehere\\AppData\\Local\\Android\\Sdk
 cmake.dir=c\:\\Program Files\\CMake</code></pre>
 
-### Linux
-
-Tested using WSL. Ensure CMake and python are installed and on the PATH.
-
 
 ## Configuring
 
@@ -76,17 +72,17 @@ and Android builds can be re-ran with
 
 If desired you can also open/build the SampleFramework using Android Studio.  In Android Studio open the project/android folder (initial load of the projects takes a while, subsequent opens are fast).  Using Android Studio to build is untested and not supported!  If you are having problems building framework samples please test using the batch file build scripts before opening any support requests.
 
-IMPORTANT NOTE: Most of the samples require binary assets to be generated before that sample can be run.  Refer to each sample's README for instructions on how to perform that step for each sample you are interested in running.
- 
 ## Running
 
-See the [Samples](samples) folder for instructions on building assets and running individual samples. 
+See the [Samples](samples) folder for instructions on building assets and running individual samples.
 
-Most samples also support a configuration file (`app_config.txt`) placed in the base of the sample's directory (Windows) or pushed loose to the sample's install folder (Android). 
+Most samples also support a configuration file (`app_config.txt`) placed in the base of the sample's directory (Windows) or pushed loose to the sample's install folder (Android).
 
 ### Android
 
-Android apk are written to `build\android\<samplename>\outputs\apk\debug\` .
+Android apk are written to `build\android\<samplename>\outputs\apk\debug\`.
+Config files may be pushed to the device using the `sample/<samplename>/install_config.bat` script provided, if available.
+Most sample apks can be installed with the `sample/<samplename>/install_apk.bat` script provided, if available.
 If the Android apk was correctly built (see note above about binary assets) it can be installed with `apk install <apk>` and run from Android.
 
 ### Windows

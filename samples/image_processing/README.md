@@ -2,3 +2,8 @@
 
 This demonstrates how to use the **VK_QCOM_Image_Processing** extension in a simple bloom shader.
 Setting gUseExtension to false will use a standard method, setting to true will use the extension in the downsample and blur passes.
+
+## Running
+
+- If you haven't already, setup the framework and build the code [instructions here](../../README.md#configuring)
+- Running this sample has no special additional requirements [instructions here](../../README.md#running)

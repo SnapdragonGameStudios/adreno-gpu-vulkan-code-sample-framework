@@ -1,4 +1,4 @@
-# Cooperative Matrix Sample
+# VK_KHR_cooperative_matrix Extension Sample
 
 ![Screenshot](img/screenshot.png)
 
@@ -7,3 +7,8 @@ This sample demonstrates the use of the *VK_KHR_cooperative_matrix* extension in
 The extension enables the application to query supported matrix tile sizes and data types, allocate the required buffers, and dispatch compute workloads that take advantage of hardware‑level cooperative matrix execution.
 
 The sample highlights how cooperative matrices can significantly improve the performance of operations such as matrix multiplication and convolution, showcasing how Vulkan applications can leverage Qualcomm™-specific GPU capabilities to achieve higher throughput on Adreno™ GPUs.
+
+## Running
+
+- If you haven't already, setup the framework and build the code [instructions here](../../README.md#configuring)
+- Running this sample has no special additional requirements [instructions here](../../README.md#running)

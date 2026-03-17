@@ -7,3 +7,8 @@ This sample demonstrates how to use the **VK_ARM_tensors**, **VK_ARM_data_graph*
 The app renders the scene at a lower resolution, copies the result into tensor objects, dispatches a **Data Graph** pipeline (optionally backed by Qualcomm’s model‑import path), and writes the upscaled output back into an image for display. When these extensions are unavailable or disabled, the sample falls back to a standard GPU blit.
 
 The sample highlights how Vulkan applications can integrate tensor operations, graph pipelines, and Qualcomm™‑specific model execution paths to achieve real‑time upscaling performance on Adreno™ GPUs.
+
+## Running
+
+- If you haven't already, setup the framework and build the code [instructions here](../../README.md#configuring)
+- Running this sample has no special additional requirements [instructions here](../../README.md#running)

@@ -11,3 +11,8 @@ The sample implements a forward rendering pipeline where shading computations ar
 By using tile memory, the sample avoids costly round-trips to global memory for intermediate shading data. Instead, lighting calculations and material evaluations are performed directly in tile-local memory, which is faster and more power-efficient.
 
 The technique is particularly well-suited for mobile GPUs, where bandwidth and power are constrained. It demonstrates how Vulkan applications can take advantage of Qualcomm™-specific extensions to optimize rendering workloads and achieve better performance on Snapdragon™ platforms.
+
+## Running
+
+- If you haven't already, setup the framework and build the code [instructions here](../../README.md#configuring)
+- Running this sample has no special additional requirements [instructions here](../../README.md#running)
