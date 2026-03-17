@@ -43,6 +43,9 @@ cmake.dir=c\:\\Program Files\\CMake</code></pre>
 
 ### Linux
 
+Tested using WSL. Ensure CMake and python are installed and on the PATH.
+
+
 ## Configuring
 
 In the root folder run the configuration/build script:
