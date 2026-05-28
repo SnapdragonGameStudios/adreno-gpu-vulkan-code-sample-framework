@@ -490,7 +490,35 @@ namespace
     
         std::cout << "\nFinished Transposing MxM on CPU\n";
     }
-}
+
+    // Transform a matrix from row-major (K-first) layout to Tiled-K-first layout.
+    // Applied to matrices A and B before uploading to GPU for TT_MXM_BASIC.
+    // Do NOT apply to matrices C or D (result).
+    //
+    // tileK = 8 * 4 / sizeof(T):  FP32 -> 8,  FP16 -> 16,  INT8 -> 32
+    //
+    // Input  layout: matrix[mm * k + kk]
+    // Output layout: matrixOut[(kk / tileK) * tileK * m + kk % tileK + mm * tileK]
+    template<typename T>
+    void TransformMatrixToTiledKfirst(const T* matrix, const uint32_t m, const uint32_t k, T* matrixOut)
+    {
+        const uint32_t tileK = (8u * 4u) / static_cast<uint32_t>(sizeof(T)); // FP32=8, FP16=16, INT8=32
+
+        std::cout << "\nTransforming " << m << "x" << k
+                  << " matrix to Tiled-K-first layout (tileK=" << tileK << ")\n";
+
+        for (uint32_t kk = 0; kk < k; kk++)
+        {
+            for (uint32_t mm = 0; mm < m; mm++)
+            {
+                matrixOut[(kk / tileK) * tileK * m + kk % tileK + mm * tileK] =
+                    matrix[mm * k + kk];
+            }
+        }
+
+        std::cout << "Finished Tiled-K-first transform\n";
+    }
+} // anonymous namespace
 
 CooperativeMatrixRunner::CooperativeMatrixRunner(Vulkan& vulkan_instance)
     : m_vulkan_instance(vulkan_instance)
@@ -1283,6 +1311,16 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
     if (layoutC_Mfirst) mC_paddedM += (mC_paddedM % (128 / bytesPerOutput)) ? 0 : 64 / bytesPerOutput; else  mC_paddedN += (mC_paddedN % (128 / bytesPerOutput)) ? 0 : 64 / bytesPerOutput;
     if (layoutR_Mfirst) mR_paddedM += (mR_paddedM % (128 / bytesPerOutput)) ? 0 : 64 / bytesPerOutput; else  mR_paddedN += (mR_paddedN % (128 / bytesPerOutput)) ? 0 : 64 / bytesPerOutput;
 
+    // Tiled-K-first layout (used by TT_MXM_BASIC) removes the need for padding on A and B.
+    // The tiling itself provides the required alignment.
+    if (tt == TT_MXM_BASIC)
+    {
+        mA_paddedM = testCase.TOTAL_M;
+        mA_paddedK = testCase.TOTAL_K;
+        mB_paddedN = testCase.TOTAL_N;
+        mB_paddedK = testCase.TOTAL_K;
+    }
+
     // Each cooperative matrix multiply is R[TILE_M, TILE_N] = A[TILE_M, TILE_K] x B[TILE_K, TILE_N] + C[TILE_M, TILE_N]
     testCase.TILE_M = cooperativeMatrixProps.MSize;
     testCase.TILE_N = cooperativeMatrixProps.NSize;
@@ -1532,6 +1570,27 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
     else
     {
         return std::nullopt;
+    }
+
+    // For Tiled-K-first layout: transform matrices A and B in-place after standard initialization.
+    // C and D (result) matrices are NOT transformed.
+    if (tt == TT_MXM_BASIC)
+    {
+        auto applyTransform = [&](auto* ptrA, auto* ptrB)
+        {
+            using T = std::remove_pointer_t<decltype(ptrA)>;
+            std::vector<T> tempA(testCase.TOTAL_M * testCase.TOTAL_K);
+            std::vector<T> tempB(testCase.TOTAL_K * testCase.TOTAL_N);
+            TransformMatrixToTiledKfirst(ptrA, testCase.TOTAL_M, testCase.TOTAL_K, tempA.data());
+            TransformMatrixToTiledKfirst(ptrB, testCase.TOTAL_K, testCase.TOTAL_N, tempB.data());
+            std::memcpy(matrices[MAT_A].ptr, tempA.data(), tempA.size() * sizeof(T));
+            std::memcpy(matrices[MAT_B].ptr, tempB.data(), tempB.size() * sizeof(T));
+        };
+
+        if      (test_description.input_type == VK_COMPONENT_TYPE_FLOAT32_KHR) applyTransform((float*)   matrices[MAT_A].ptr, (float*)   matrices[MAT_B].ptr);
+        else if (test_description.input_type == VK_COMPONENT_TYPE_FLOAT16_KHR) applyTransform((FLOAT16*) matrices[MAT_A].ptr, (FLOAT16*) matrices[MAT_B].ptr);
+        else if (test_description.input_type == VK_COMPONENT_TYPE_SINT8_KHR)   applyTransform((int8_t*)  matrices[MAT_A].ptr, (int8_t*)  matrices[MAT_B].ptr);
+        else if (test_description.input_type == VK_COMPONENT_TYPE_UINT8_KHR)   applyTransform((uint8_t*) matrices[MAT_A].ptr, (uint8_t*) matrices[MAT_B].ptr);
     }
 
     // Specialize the shader with the matrix sizes, strides, and constants.
