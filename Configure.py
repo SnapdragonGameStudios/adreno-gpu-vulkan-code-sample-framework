@@ -554,9 +554,19 @@ android {{
     afterEvaluate {{
         packageRelease.finalizedBy(removeTmpAssets)
         preBuild.dependsOn(":framework:buildNeeded")
-    }}
 
-    preBuild.dependsOn(copyTmpAssets)
+        // Fix: CMake writes assets (shaders, meshes, textures) to build/Media/ during configure+build,
+        // which runs AFTER preBuild. Running copyTmpAssets at preBuild means the source is empty on
+        // first build. Fix: run copyTmpAssets after native build, before asset merge.
+        def nativeBuildDebug   = tasks.findByName("externalNativeBuildDebug")
+        def nativeBuildRelease = tasks.findByName("externalNativeBuildRelease")
+        def mergeDebugAssets   = tasks.findByName("mergeDebugAssets")
+        def mergeReleaseAssets = tasks.findByName("mergeReleaseAssets")
+        if (nativeBuildDebug)   copyTmpAssets.dependsOn(nativeBuildDebug)
+        if (nativeBuildRelease) copyTmpAssets.dependsOn(nativeBuildRelease)
+        if (mergeDebugAssets)   mergeDebugAssets.dependsOn(copyTmpAssets)
+        if (mergeReleaseAssets) mergeReleaseAssets.dependsOn(copyTmpAssets)
+    }}
 
     def overrideFile = file("${{project.projectDir}}/../override.gradle")
     if (overrideFile.exists()) {{

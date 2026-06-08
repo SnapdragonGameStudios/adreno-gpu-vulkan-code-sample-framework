@@ -1444,7 +1444,7 @@ void Application::Render(float fltDiffTime)
             const auto renderArea = renderPassInfo.renderArea;
 
             VkRenderPassTileShadingCreateInfoQCOM tileShadingCreateInfo{ VK_STRUCTURE_TYPE_RENDER_PASS_TILE_SHADING_CREATE_INFO_QCOM };
-            tileShadingCreateInfo.flags = VK_TILE_SHADING_RENDER_PASS_ENABLE_BIT_QCOM /* | VK_TILE_SHADING_RENDER_PASS_PER_TILE_EXECUTION_BIT_QCOM*/;
+            tileShadingCreateInfo.flags = VK_TILE_SHADING_RENDER_PASS_ENABLE_BIT_QCOM | VK_TILE_SHADING_RENDER_PASS_PER_TILE_EXECUTION_BIT_QCOM;
             tileShadingCreateInfo.tileApronSize = VkExtent2D{0, 0};
 
             if (isTileShadingPass)
@@ -1855,13 +1855,13 @@ void Application::Render(float fltDiffTime)
             VK_IMAGE_LAYOUT_UNDEFINED,
             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
         SimpleImageBarrier(
-            commandList, 
+            commandList,
             m_TileShadingSceneRenderTarget.GetDepthAttachment().GetVkImage(),
             VK_IMAGE_ASPECT_DEPTH_BIT,
             VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
             VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
             VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
-            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
             VK_IMAGE_LAYOUT_UNDEFINED,
             VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
     }, 
@@ -1899,10 +1899,10 @@ void Application::Render(float fltDiffTime)
             VK_IMAGE_ASPECT_DEPTH_BIT,
             VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
             VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
             VK_ACCESS_2_SHADER_TILE_ATTACHMENT_READ_BIT_QCOM,
             VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-            VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR); // Works with storage image, otherwise it would need to be VK_IMAGE_LAYOUT_GENERAL
+            VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR);
 
         SimpleBufferBarrier(
             commandList,
@@ -1980,9 +1980,9 @@ void Application::Render(float fltDiffTime)
             VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR,
             VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR);
 
-        std::array<uint32_t, 2> inputColorAttachmentIndices = { 0, 1 };
+        std::array<uint32_t, 3> inputColorAttachmentIndices = { 0, 1, VK_ATTACHMENT_UNUSED };
         uint32_t                inputDepthAttachmentIndex = 2;
-        std::array<uint32_t, 1> colorAttachmentLocations = { 2 };
+        std::array<uint32_t, 3> colorAttachmentLocations = { VK_ATTACHMENT_UNUSED, VK_ATTACHMENT_UNUSED, 2 };
 
         VkRenderingInputAttachmentIndexInfo renderingInputAttachmentIndexInfo{ VK_STRUCTURE_TYPE_RENDERING_INPUT_ATTACHMENT_INDEX_INFO };
         renderingInputAttachmentIndexInfo.colorAttachmentCount = inputColorAttachmentIndices.size();
@@ -2027,16 +2027,6 @@ void Application::Render(float fltDiffTime)
                 },
                     RenderingAttachmentInfo::Depth(m_TileShadingSceneRenderTarget.GetDepthAttachment(),     true,                        RenderPassOutputUsage::Store) // RenderPassOutputUsage::Discard
                 )}),
-            PassRecordData(m_TileShadingPassData, std::move(tileShadingSceneDataProcessor)),
-            true);
-        RecordPassData(
-            RecordRenderingInfo({ &m_TileShadingPassData.renderContext , RenderingAttachmentInfoGroup(
-                m_TileShadingSceneRenderTarget,
-                RenderPassInputUsage::Clear,
-                RenderPassOutputUsage::Store,
-                true,
-                RenderPassOutputUsage::Store)
-                }),
             PassRecordData(m_TileShadingPassData, std::move(tileShadingSceneDataProcessor)),
             true);
     }

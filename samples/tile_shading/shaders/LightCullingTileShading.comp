@@ -54,7 +54,7 @@ struct SceneInfoUB
     int padding2;
 };
 
-layout(set = 0, binding = 0, tile_attachmentQCOM, rgba32f) uniform highp readonly image2D u_DepthTex;
+layout(set = 0, binding = 0, tile_attachmentQCOM, r32f) uniform highp readonly image2D u_DepthTex;
 
 layout(std140, set = 0, binding = 1) uniform SceneInfo 
 {
