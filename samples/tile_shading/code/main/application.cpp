@@ -118,6 +118,7 @@ void Application::PreInitializeSetVulkanConfiguration(Vulkan::AppConfiguration& 
     config.RequiredExtension<ExtensionLib::Ext_VK_KHR_dynamic_rendering>();
     config.OptionalExtension<ExtensionLib::Ext_VK_KHR_dynamic_rendering_local_read>();
     config.OptionalExtension<ExtensionLib::Ext_VK_QCOM_tile_shading>();
+    config.OptionalExtension<ExtensionLib::Ext_VK_EXT_host_query_reset>(); // for GPU timers
 }
 
 //-----------------------------------------------------------------------------
@@ -178,6 +179,12 @@ bool Application::Initialize(uintptr_t windowHandle, uintptr_t hInstance)
     if (!CreateComputables())
     {
         return false;
+    }
+
+    if (!m_PassTimings.Initialize(*GetVulkan()))
+    {
+        // GPU timers are optional; log but continue without them.
+        LOGW("App: GPU timer pool init failed (VK_EXT_host_query_reset unavailable?). CPU-only timings.");
     }
 
     if (!InitCommandBuffers())
@@ -246,6 +253,8 @@ void Application::Destroy()
     m_MaterialManager.reset();
     m_CameraController.reset();
     m_AssetManager.reset();
+
+    m_PassTimings.Destroy();
 
     ApplicationHelperBase::Destroy();
 }
@@ -997,7 +1006,7 @@ bool Application::CreateComputables()
         auto materialTileShadingAreaDispatch = m_MaterialManager->CreateMaterial(
             *lightCullingTileShadingShaderAreaDispatch,
             NUM_VULKAN_BUFFERS,
-            [&](const std::string& texName) -> MaterialManager::tPerFrameTexInfo 
+            [&](const std::string& texName) -> MaterialManager::tPerFrameTexInfo
             {
                 if (texName == "SceneDepth")
                 {
@@ -1005,7 +1014,7 @@ bool Application::CreateComputables()
                 }
                 assert(0);
                 return {};
-            }, 
+            },
             [&](const std::string& bufferName) -> PerFrameBufferVulkan
             {
                 if (bufferName == "SceneInfo")
@@ -1066,7 +1075,7 @@ bool Application::InitCommandBuffers()
         {
             // The Pass Command Buffer => Primary
             sprintf(szName, "Primary (%s; Buffer %d of %d)", GetPassName(whichPass), whichBuffer + 1, NUM_VULKAN_BUFFERS);
-            if (!m_RenderPassData[whichPass].passCmdBuffer[whichBuffer].Initialize(pVulkan, szName, CommandListBase::Type::Primary))
+            if (!m_RenderPassData[whichPass].passCmdBuffer[whichBuffer].Initialize(pVulkan, szName, CommandListBase::Type::Primary, Vulkan::eGraphicsQueue, m_PassTimings.GetTimerPool()))
             {
                 return false;
             }
@@ -1077,7 +1086,7 @@ bool Application::InitCommandBuffers()
     {
         // The Pass Command Buffer => Primary
         sprintf(szName, "Primary (Buffer %d of %d)", whichBuffer + 1, NUM_VULKAN_BUFFERS);
-        if (!m_TileShadingPassData.passCmdBuffer[whichBuffer].Initialize(pVulkan, szName, CommandListBase::Type::Primary))
+        if (!m_TileShadingPassData.passCmdBuffer[whichBuffer].Initialize(pVulkan, szName, CommandListBase::Type::Primary, Vulkan::eGraphicsQueue, m_PassTimings.GetTimerPool()))
         {
             return false;
         }
@@ -1089,7 +1098,7 @@ bool Application::InitCommandBuffers()
         {
             // The Pass Command Buffer => Primary
             sprintf(szName, "Primary (%s; Buffer %d of %d)", GetPassName(whichPass), whichBuffer + 1, NUM_VULKAN_BUFFERS);
-            if (!m_ComputePassData[whichPass].passCmdBuffer[whichBuffer].Initialize(pVulkan, szName, CommandListBase::Type::Primary))
+            if (!m_ComputePassData[whichPass].passCmdBuffer[whichBuffer].Initialize(pVulkan, szName, CommandListBase::Type::Primary, Vulkan::eGraphicsQueue, m_PassTimings.GetTimerPool()))
             {
                 return false;
             }
@@ -1169,7 +1178,7 @@ void Application::UpdateGui()
         {
             if(ImGui::CollapsingHeader("Scene Details"))
             {
-                ImGui::Text("FPS: %.1f", m_CurrentFPS);
+                ImGui::Text("FPS: %.1f   (60f avg: %.1f)", m_InstantFPS, m_FpsAvg60);
                 ImGui::Text("Camera [%f, %f, %f]", m_Camera.Position().x, m_Camera.Position().y, m_Camera.Position().z);
                 ImGui::Checkbox("Limit Values to Adreno Values", &m_CapMaxValues);
             }
@@ -1177,27 +1186,34 @@ void Application::UpdateGui()
             if(ImGui::CollapsingHeader("Clustered Deferred Light", ImGuiTreeNodeFlags_DefaultOpen))
             {
                 ImGui::BeginDisabled(!m_IsTileShadingSupported);
-                ImGui::Checkbox("Tile Shading Enabled", &m_IsTileShadingActive);
+                if (ImGui::Checkbox("Tile Shading Enabled", &m_IsTileShadingActive))
+                    m_ResetPerfStats = true;
                 ImGui::EndDisabled();
 
-                ImGui::BeginDisabled(!m_IsTileShadingSupported || !m_IsTileShadingActive || true);
-                ImGui::Checkbox("Area Dispatch", &m_IsAreaDispatchActive);
+                ImGui::BeginDisabled(!m_IsTileShadingSupported || !m_IsTileShadingActive);
+                if (ImGui::Checkbox("Area Dispatch", &m_IsAreaDispatchActive))
+                    m_ResetPerfStats = true;
                 ImGui::EndDisabled();
 
                 ImGui::Separator();
 
                 bool ignoreLightTiles = static_cast<bool>(m_SceneInfoUniformData.ignoreLightTiles);
-                ImGui::Checkbox("Deactivate Clustering", &ignoreLightTiles);
+                if (ImGui::Checkbox("Deactivate Clustering", &ignoreLightTiles))
+                    m_ResetPerfStats = true;
                 m_SceneInfoUniformData.ignoreLightTiles = static_cast<int32_t>(ignoreLightTiles);
 
                 bool debugShaders = static_cast<bool>(m_SceneInfoUniformData.debugShaders);
-                ImGui::Checkbox("Visualize Clusters", &debugShaders);
+                if (ImGui::Checkbox("Visualize Clusters", &debugShaders))
+                    m_ResetPerfStats = true;
                 m_SceneInfoUniformData.debugShaders = static_cast<int32_t>(debugShaders);
 
                 ImGui::Separator();
 
+                const int prevLightCount = m_SceneInfoUniformData.lightCount;
                 ImGui::DragInt("Light Count", &m_SceneInfoUniformData.lightCount, 1.0f, 0, m_CapMaxValues ? 64 : MAX_LIGHT_COUNT);
                 m_SceneInfoUniformData.lightCount = std::min(m_SceneInfoUniformData.lightCount, m_CapMaxValues ? 64 : MAX_LIGHT_COUNT);
+                if (m_SceneInfoUniformData.lightCount != prevLightCount)
+                    m_ResetPerfStats = true;
 
                 ImGui::Separator();
 
@@ -1206,7 +1222,8 @@ void Application::UpdateGui()
                     static_cast<int32_t>(m_SceneInfoUniformData.clusterSizeX)
                 };
 
-                ImGui::DragInt("Cluster Size", clusterSize.data(), 8.0f, 32, m_CapMaxValues ? 96 : 192);
+                if (ImGui::DragInt("Cluster Size", clusterSize.data(), 8.0f, 32, m_CapMaxValues ? 96 : 192))
+                    m_ResetPerfStats = true;
                 m_SceneInfoUniformData.clusterSizeX = static_cast<uint32_t>(clusterSize[0]);
                 m_SceneInfoUniformData.clusterSizeY = static_cast<uint32_t>(clusterSize[0]);
 
@@ -1268,6 +1285,45 @@ void Application::UpdateGui()
                     m_SceneInfoUniformData.globalClusterCountX,
                     m_SceneInfoUniformData.globalClusterCountY,
                     m_SceneInfoUniformData.globalClusterCountX * m_SceneInfoUniformData.globalClusterCountY);
+
+                ImGui::Separator();
+                ImGui::Text("Pass timings (EMA avg):");
+                if (ImGui::BeginTable("##pass_timings", 3,
+                    ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg))
+                {
+                    ImGui::TableSetupColumn("Pass",   ImGuiTableColumnFlags_WidthFixed, 120.f);
+                    ImGui::TableSetupColumn("CPU ms", ImGuiTableColumnFlags_WidthFixed, 120.f);
+                    ImGui::TableSetupColumn("GPU ms", ImGuiTableColumnFlags_WidthFixed, 120.f);
+                    ImGui::TableHeadersRow();
+
+                    double totalCpu = 0.0, totalGpu = 0.0;
+                    // Iterate only the named passes (exclude TotalFrame slot)
+                    for (uint32_t s = 0; s < kTimingSlotCount - 1; ++s)
+                    {
+                        const auto& r = m_PassTimings.GetResult(static_cast<TimingSlot>(s));
+                        totalCpu += r.cpuMs;
+                        totalGpu += r.gpuMs;
+                        ImGui::TableNextRow();
+                        ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(kTimingSlotNames[s]);
+                        ImGui::TableSetColumnIndex(1); ImGui::Text("%.2f", r.cpuMs);
+                        ImGui::TableSetColumnIndex(2);
+                        if (r.gpuMs > 0.0)
+                            ImGui::Text("%.2f", r.gpuMs);
+                        else
+                            ImGui::TextDisabled("--");
+                    }
+                    // Total row
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted("Total");
+                    ImGui::TableSetColumnIndex(1); ImGui::Text("%.2f", totalCpu);
+                    ImGui::TableSetColumnIndex(2);
+                    if (totalGpu > 0.0)
+                        ImGui::Text("%.2f", totalGpu);
+                    else
+                        ImGui::TextDisabled("--");
+                    ImGui::EndTable();
+                }
+
             }
 
             glm::vec3 LightDirNotNormalized   = m_SceneInfoUniformData.skyLightDirection;
@@ -1362,6 +1418,26 @@ void Application::Render(float fltDiffTime)
     // Application Draw() - Begin
     // ********************************
 
+    m_InstantFPS = (fltDiffTime > 0.f) ? (1.f / fltDiffTime) : m_InstantFPS;
+
+    if (m_ResetPerfStats)
+    {
+        m_FpsHistory.fill(0.f);
+        m_FpsHistoryHead  = 0;
+        m_FpsHistoryCount = 0;
+        m_FpsAvg60        = 0.f;
+        m_PassTimings.ResetGpuAverages();
+        m_ResetPerfStats  = false;
+    }
+    m_FpsHistory[m_FpsHistoryHead] = m_InstantFPS;
+    m_FpsHistoryHead  = (m_FpsHistoryHead + 1) % kFpsAvgFrames;
+    m_FpsHistoryCount = std::min(m_FpsHistoryCount + 1, kFpsAvgFrames);
+    {
+        float sum = 0.f;
+        for (int i = 0; i < m_FpsHistoryCount; ++i) sum += m_FpsHistory[i];
+        m_FpsAvg60 = (m_FpsHistoryCount > 0) ? (sum / static_cast<float>(m_FpsHistoryCount)) : 0.f;
+    }
+
     m_SceneInfoUniformData.viewportWidth  = gRenderWidth;
     m_SceneInfoUniformData.viewportHeight = gRenderHeight;
 
@@ -1385,7 +1461,6 @@ void Application::Render(float fltDiffTime)
         return;
     }
 
-    // const VkPipelineStageFlags defaultGfxWaitDstStageMasks[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
     const VkPipelineStageFlags defaultGfxWaitDstStageMasks[] = { VK_PIPELINE_STAGE_ALL_COMMANDS_BIT };
 
     // First time through, wait for the back buffer to be ready
@@ -1571,15 +1646,18 @@ void Application::Render(float fltDiffTime)
     auto sceneDataProcessor = PassDataProcessor(
     [&](uint32_t whichBuffer, CommandListVulkan& commandList)
     {
+        // GPU timer readback must happen before any render pass begins.
+        m_PassTimings.BeginFrame(commandList.m_VkCommandBuffer, whichBuffer);
+
         SimpleImageBarrier(
-            commandList, 
+            commandList,
             m_DefaultRenderTargets[RP_SCENE].GetColorAttachments()[0].GetVkImage(),
             VK_IMAGE_ASPECT_COLOR_BIT,
             VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
             VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
             VK_ACCESS_2_MEMORY_WRITE_BIT,
-            VK_IMAGE_LAYOUT_UNDEFINED, 
+            VK_IMAGE_LAYOUT_UNDEFINED,
             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
         SimpleImageBarrier(
             commandList, 
@@ -1605,15 +1683,19 @@ void Application::Render(float fltDiffTime)
     [&](uint32_t whichBuffer, CommandListVulkan& commandList)
     {
         // Scene drawables
+        m_PassTimings.CpuBegin(TimingSlot::Scene);
+        auto sceneGpuTimer = m_PassTimings.GpuBegin(commandList, TimingSlot::Scene);
         for (const auto& sceneDrawable : m_SceneDrawables)
         {
             AddDrawableToCmdBuffer(sceneDrawable, commandList, whichBuffer);
         }
-    }, 
+        m_PassTimings.GpuEnd(commandList, sceneGpuTimer);
+        m_PassTimings.CpuEnd(TimingSlot::Scene);
+    },
     [&](uint32_t whichBuffer, CommandListVulkan& commandList)
     {
         SimpleImageBarrier(
-            commandList, 
+            commandList,
             m_DefaultRenderTargets[RP_SCENE].GetColorAttachments()[0].GetVkImage(),
             VK_IMAGE_ASPECT_COLOR_BIT,
             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
@@ -1669,14 +1751,16 @@ void Application::Render(float fltDiffTime)
     {
         auto& computePassData = m_ComputePassData[CP_LIGHT_CULLING_LIST];
 
+        m_PassTimings.CpuBegin(TimingSlot::LightCull);
+        auto lcGpuTimer = m_PassTimings.GpuBegin(commandList, TimingSlot::LightCull);
         for (auto& computablePass : computePassData.passComputable->GetPasses())
         {
-            computePassData.passComputable->SetDispatchGroupCount(0, 
-            { 
+            computePassData.passComputable->SetDispatchGroupCount(0,
+            {
                 // Dispatch all tiles at once
                 m_SceneInfoUniformData.globalClusterCountX,
                 m_SceneInfoUniformData.globalClusterCountY,
-                1 
+                1
             });
 
             computePassData.passComputable->DispatchPass(
@@ -1684,7 +1768,9 @@ void Application::Render(float fltDiffTime)
                 computablePass,
                 whichBuffer);
         }
-    }, 
+        m_PassTimings.GpuEnd(commandList, lcGpuTimer);
+        m_PassTimings.CpuEnd(TimingSlot::LightCull);
+    },
     [&](uint32_t whichBuffer, CommandListVulkan& commandList)
     {
         SimpleBufferBarrier(
@@ -1732,8 +1818,12 @@ void Application::Render(float fltDiffTime)
     }, 
     [&](uint32_t whichBuffer, CommandListVulkan& commandList)
     {
+        m_PassTimings.CpuBegin(TimingSlot::DeferredLight);
+        auto dlGpuTimer = m_PassTimings.GpuBegin(commandList, TimingSlot::DeferredLight);
         AddDrawableToCmdBuffer(*m_DeferredLightQuadDrawable, commandList, whichBuffer);
-    }, 
+        m_PassTimings.GpuEnd(commandList, dlGpuTimer);
+        m_PassTimings.CpuEnd(TimingSlot::DeferredLight);
+    },
     [&](uint32_t whichBuffer, CommandListVulkan& commandList)
     {
         SimpleImageBarrier(
@@ -1821,11 +1911,17 @@ void Application::Render(float fltDiffTime)
     ///////////////////////////////////////////////////////////////////////////////////////
     // DATA PROCESSOR: TILE SHADING SCENE //
     ///////////////////////////////////////////////////////////////////////////////////////
+    // vkCmdWriteTimestamp inside a tile-shading render pass is not captured by the driver;
+    // use a single outer timer (pre/post-callback) for the entire tile frame.
+    TimerPoolBase::TimerId tileGpuTimer = -1;
     auto tileShadingSceneDataProcessor = PassDataProcessor(
     [&](uint32_t whichBuffer, CommandListVulkan& commandList)
     {
+        // GPU timer readback must happen before any render pass begins.
+        m_PassTimings.BeginFrame(commandList.m_VkCommandBuffer, whichBuffer);
+
         SimpleImageBarrier(
-            commandList, 
+            commandList,
             m_TileShadingSceneRenderTarget.GetColorAttachments()[0].GetVkImage(),
             VK_IMAGE_ASPECT_COLOR_BIT,
             VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
@@ -1864,10 +1960,14 @@ void Application::Render(float fltDiffTime)
             VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
             VK_IMAGE_LAYOUT_UNDEFINED,
             VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-    }, 
+
+        // Start the GPU timer outside the render pass (tile-shading passes don't support
+        // vkCmdWriteTimestamp inside them).
+        m_PassTimings.CpuBegin(TimingSlot::Scene);
+        tileGpuTimer = m_PassTimings.GpuBegin(commandList, TimingSlot::Scene);
+    },
     [&](uint32_t whichBuffer, CommandListVulkan& commandList)
     {
-        // Scene drawables
         for (const auto& sceneDrawable : m_SceneDrawables)
         {
             AddDrawableToCmdBuffer(sceneDrawable, commandList, whichBuffer);
@@ -1920,6 +2020,7 @@ void Application::Render(float fltDiffTime)
             VK_ACCESS_2_MEMORY_WRITE_BIT);
 
         VkPerTileBeginInfoQCOM per_tile_beging_info{ VK_STRUCTURE_TYPE_PER_TILE_BEGIN_INFO_QCOM };
+        m_PassTimings.CpuBegin(TimingSlot::LightCull);
         vkCmdBeginPerTileExecutionQCOM(commandList.m_VkCommandBuffer, &per_tile_beging_info);
 
         if (m_IsAreaDispatchActive)
@@ -1954,18 +2055,19 @@ void Application::Render(float fltDiffTime)
         
         VkPerTileEndInfoQCOM per_tile_end_info{ VK_STRUCTURE_TYPE_PER_TILE_END_INFO_QCOM };
         vkCmdEndPerTileExecutionQCOM(commandList.m_VkCommandBuffer, &per_tile_end_info);
+        m_PassTimings.CpuEnd(TimingSlot::LightCull);
 
         SimpleBufferBarrier(
             commandList,
             m_LightIndicesBuffer.GetVkBuffer(),
-            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+            VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,   // vkCmdDispatchTileQCOM may not be COMPUTE_SHADER stage
             VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
             VK_ACCESS_2_MEMORY_WRITE_BIT,
             VK_ACCESS_2_MEMORY_READ_BIT);
         SimpleBufferBarrier(
             commandList,
             m_LightCountsBuffer.GetVkBuffer(),
-            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
+            VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,   // vkCmdDispatchTileQCOM may not be COMPUTE_SHADER stage
             VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
             VK_ACCESS_2_MEMORY_WRITE_BIT,
             VK_ACCESS_2_MEMORY_READ_BIT);
@@ -1996,10 +2098,15 @@ void Application::Render(float fltDiffTime)
         vkCmdSetRenderingInputAttachmentIndices(commandList, &renderingInputAttachmentIndexInfo);
         vkCmdSetRenderingAttachmentLocations(commandList, &renderingAttachmentLocationInfo);
 
+        m_PassTimings.CpuBegin(TimingSlot::DeferredLight);
         AddDrawableToCmdBuffer(*m_DeferredLightTileShadingQuadDrawable, commandList, whichBuffer);
-    }, 
+        m_PassTimings.CpuEnd(TimingSlot::DeferredLight);
+    },
     [&](uint32_t whichBuffer, CommandListVulkan& commandList)
     {
+        m_PassTimings.GpuEnd(commandList, tileGpuTimer);
+        m_PassTimings.CpuEnd(TimingSlot::Scene);
+
         SimpleImageBarrier(
             commandList,
             m_TileShadingSceneRenderTarget.GetColorAttachments()[2].GetVkImage(),
@@ -2156,6 +2263,8 @@ void Application::Render(float fltDiffTime)
 
         pWaitSemaphores = { &m_SwapchhainCopySemaphore,1 };
     }
+
+    m_PassTimings.UpdateResults(whichBuffer);
 
     // Queue is loaded up, tell the driver to start processing
     pVulkan->PresentQueue(pWaitSemaphores, currentVulkanBuffer.swapchainPresentIdx);

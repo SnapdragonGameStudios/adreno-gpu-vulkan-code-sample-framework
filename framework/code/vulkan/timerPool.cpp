@@ -40,15 +40,23 @@ bool TimerPoolBase::Initialize( uint32_t maxTimers )
     QueryInfo.pipelineStatistics = 0;
 
     const auto* hostQueryResetExt = m_Vulkan.GetExtension<ExtensionLib::Ext_VK_EXT_host_query_reset>();
-    if (!hostQueryResetExt || hostQueryResetExt->Status != VulkanExtensionStatus::eLoaded)
+    if (hostQueryResetExt && hostQueryResetExt->Status == VulkanExtensionStatus::eLoaded)
     {
-        LOGE("TimerPoolBase functionality requires VK_EXT_host_query_reset extension"); // Likely missing appConfig.RequiredExtension<ExtensionLib::Ext_VK_EXT_host_query_reset>()  (or hardware does not support VK_EXT_host_query_reset)
-        // If we move to requiring Vulkan 1.2 then we can remove this check and use vkResetQueryPool (no extension needed in 1.2)
-        // Alternately we could do the resets on the GPU (which is supported in 1.1) and modify tracking of valid timers accordingly
+        m_vkResetQueryPoolEXT = hostQueryResetExt->m_vkResetQueryPoolEXT;
+    }
+    else
+    {
+        // VK_EXT_host_query_reset was promoted to Vulkan 1.2 core as vkResetQueryPool.
+        // On 1.2+ devices the extension may not be listed; try loading both entry points.
+        m_vkResetQueryPoolEXT = (PFN_vkResetQueryPoolEXT) vkGetDeviceProcAddr( m_Vulkan.m_VulkanDevice, "vkResetQueryPoolEXT" );
+        if (!m_vkResetQueryPoolEXT)
+            m_vkResetQueryPoolEXT = (PFN_vkResetQueryPoolEXT) vkGetDeviceProcAddr( m_Vulkan.m_VulkanDevice, "vkResetQueryPool" );
+    }
+    if (!m_vkResetQueryPoolEXT)
+    {
+        LOGE("TimerPoolBase: vkResetQueryPool(EXT) not available, GPU timers disabled.");
         return false;
     }
-
-    m_vkResetQueryPoolEXT = hostQueryResetExt->m_vkResetQueryPoolEXT;
 
     auto RetVal = vkCreateQueryPool( m_Vulkan.m_VulkanDevice, &QueryInfo, nullptr, &m_VulkanQueryPool );
     if (!CheckVkError( "vkCreateQueryPool()", RetVal ))
@@ -144,7 +152,7 @@ void TimerPoolBase::TimerCommandBufferReset(std::span<TimerId> timerIds)
 void TimerPoolBase::ReadResults(VkCommandBuffer commandBuffer, uint32_t whichFrame)
 {
     uint32_t maxUsedQueries = m_MaxUsedTimerIndex * 2 + 2;
-    if (m_MaxUsedTimerIndex > 0)
+    if (m_MaxUsedTimerIndex >= 0)
     {
         vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT/*src stage*/, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT/* dest stage bit*/,
             0, 0, nullptr, 0, nullptr, 0, nullptr);
@@ -184,7 +192,14 @@ void TimerPoolBase::UpdateResults(uint32_t whichFrame)
         {
             // Timer fully completed.
             const TimerQuery& inflightTimer = m_TimerQueries[timerIdx];
-            assert(inflightTimer.pTimer);   // will fire if this query slot is currently unused.
+            if (!inflightTimer.pTimer)
+            {
+                // Stale result for a slot that was already freed (can occur across mode switches).
+                // Clear the availability so this slot is not processed again.
+                StartResult.Availability = 0;
+                StopResult.Availability  = 0;
+                continue;
+            }
             inflightTimer.pTimer->Update(whichFrame, StartResult.Timestamp, StopResult.Timestamp);
 
             StartResult.Availability = 0;

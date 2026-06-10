@@ -3,6 +3,7 @@
 	"Passes": [
 		{
 			"Name": "CP_LIGHT_CULLING_LIST",
+			"PerTileDispatch": true,
 			"Shaders": {
 				"Compute": "Media/Shaders/LightCullingTileShadingAreaDispatch.comp.spv"
 			},

@@ -12,6 +12,8 @@
 #include "memory/vulkan/bufferObject.hpp"
 #include "vulkan/commandBuffer.hpp"
 #include "vulkan/renderTarget.hpp"
+#include "pass_timings.hpp"
+#include <array>
 #include <unordered_map>
 #include <optional>
 
@@ -256,7 +258,6 @@ private:
     std::vector<Drawable> m_SceneDrawables;
     std::unique_ptr<Drawable> m_DeferredLightQuadDrawable;
     std::unique_ptr<Drawable> m_DeferredLightTileShadingQuadDrawable;
-    std::unique_ptr<Drawable> m_DeferredLightTileShadingAreaDispatchQuadDrawable;
     std::unique_ptr<Drawable> m_BlitQuadDrawable;
 
     // Shaders
@@ -269,7 +270,19 @@ private:
     bool m_IsTilePropertiesSupported = true;
     bool m_IsTileShadingSupported    = true;
     bool m_IsTileShadingActive       = false;
-    bool m_IsAreaDispatchActive      = false;
+    bool m_IsAreaDispatchActive      = true;
     bool m_CapMaxValues              = true;
     glm::uvec2 m_BinSize = glm::uvec2(100, 100);
+
+    PassTimings m_PassTimings;
+
+    float m_InstantFPS = 0.f;
+
+    static constexpr int kFpsAvgFrames = 60;
+    std::array<float, kFpsAvgFrames> m_FpsHistory{};
+    int   m_FpsHistoryHead  = 0;
+    int   m_FpsHistoryCount = 0;
+    float m_FpsAvg60        = 0.f;
+
+    bool m_ResetPerfStats = false;
 };
