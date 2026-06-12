@@ -495,15 +495,15 @@ namespace
     // Applied to matrices A and B before uploading to GPU for TT_MXM_BASIC.
     // Do NOT apply to matrices C or D (result).
     //
-    // tileK = 8 * 4 / sizeof(T):  FP32 -> 8,  FP16 -> 16,  INT8 -> 32
+    // The tileK parameter must be set to:
+    //   - TILE_K (cooperativeMatrixProps.KSize) for matrix A
+    //   - TILE_N (cooperativeMatrixProps.NSize) for matrix B
     //
     // Input  layout: matrix[mm * k + kk]
     // Output layout: matrixOut[(kk / tileK) * tileK * m + kk % tileK + mm * tileK]
     template<typename T>
-    void TransformMatrixToTiledKfirst(const T* matrix, const uint32_t m, const uint32_t k, T* matrixOut)
+    void TransformMatrixToTiledKfirst(const T* matrix, const uint32_t m, const uint32_t k, T* matrixOut, uint32_t tileK)
     {
-        const uint32_t tileK = (8u * 4u) / static_cast<uint32_t>(sizeof(T)); // FP32=8, FP16=16, INT8=32
-
         std::cout << "\nTransforming " << m << "x" << k
                   << " matrix to Tiled-K-first layout (tileK=" << tileK << ")\n";
 
@@ -749,8 +749,6 @@ void CooperativeMatrixRunner::RenderUI()
             }
         }
 
-        // NOTE: Validation (and its transpose option) will be added in a future path
-        ImGui::BeginDisabled();
         if (m_validate_matrix_result)
         {
             ImGui::BeginDisabled();
@@ -764,7 +762,6 @@ void CooperativeMatrixRunner::RenderUI()
         }
 
         ImGui::Checkbox("Validate Result", &m_validate_matrix_result);
-        ImGui::EndDisabled();
     }
 
     ImGui::Separator();
@@ -890,6 +887,15 @@ void CooperativeMatrixRunner::RenderUI()
 
                                 ImGui::Text("[Time]: %.2fus", test_result.time_total);
                                 ImGui::Text("[TOPS]: %.2f", test_result.TOPS);
+
+                                if (test_result.validation_pass.has_value())
+                                {
+                                    const bool vpass = *test_result.validation_pass;
+                                    ImGui::PushStyleColor(ImGuiCol_Text, vpass ? ImVec4(0.2f, 1.0f, 0.2f, 1.0f)
+                                                                                : ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+                                    ImGui::Text(vpass ? "[VAL]: PASS" : "[VAL]: FAIL");
+                                    ImGui::PopStyleColor();
+                                }
 
                                 if (m_test_type == TT_CONV)
                                     ImGui::TextDisabled("WxH = %dx%d", test_description.inputWidth, test_description.inputHeight);
@@ -1503,7 +1509,7 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
         InitMatrix((float*)matrices[MAT_C].ptr, testCase.TOTAL_M, testCase.TOTAL_N, matrices[MAT_C].dims.cols, FILL_WITH_ZERO, 2);  
         InitMatrix((float*)matrices[MAT_R].ptr, testCase.TOTAL_M, testCase.TOTAL_N, matrices[MAT_R].dims.cols, FILL_WITH_ZERO, 2);
 
-        if (m_transpose_when_needed || m_validate_matrix_result)
+        if ((m_transpose_when_needed || m_validate_matrix_result) && tt != TT_MXM_BASIC)
         {
             if (layoutA_Mfirst) // Matrix A M-First?
                 TransposeMatrix((float*)matrices[MAT_A].ptr, matrices[MAT_A].dims.rows, matrices[MAT_A].dims.cols, "layoutA_Mfirst");
@@ -1521,7 +1527,7 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
         InitMatrix((FLOAT16*)matrices[MAT_C].ptr, testCase.TOTAL_M, testCase.TOTAL_N, matrices[MAT_C].dims.cols, FILL_WITH_ZERO, 2);
         InitMatrix((FLOAT16*)matrices[MAT_R].ptr, testCase.TOTAL_M, testCase.TOTAL_N, matrices[MAT_R].dims.cols, FILL_WITH_ZERO, 2);
 
-        if (m_transpose_when_needed || m_validate_matrix_result)
+        if ((m_transpose_when_needed || m_validate_matrix_result) && tt != TT_MXM_BASIC)
         {
             if (layoutA_Mfirst) // Matrix A M-First?
                 TransposeMatrix((FLOAT16*)matrices[MAT_A].ptr, matrices[MAT_A].dims.rows, matrices[MAT_A].dims.cols, "layoutA_Mfirst");
@@ -1539,7 +1545,7 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
         InitMatrix((int32_t*)matrices[MAT_C].ptr,testCase.TOTAL_M, testCase.TOTAL_N, matrices[MAT_C].dims.cols, FILL_WITH_ZERO, 2);
         InitMatrix((int32_t*)matrices[MAT_R].ptr,testCase.TOTAL_M, testCase.TOTAL_N, matrices[MAT_R].dims.cols, FILL_WITH_ZERO, 2);
 
-        if (m_transpose_when_needed || m_validate_matrix_result)
+        if ((m_transpose_when_needed || m_validate_matrix_result) && tt != TT_MXM_BASIC)
         {
             if (layoutA_Mfirst) // Matrix A M-First?
                 TransposeMatrix((int8_t*)matrices[MAT_A].ptr, matrices[MAT_A].dims.rows, matrices[MAT_A].dims.cols, "layoutA_Mfirst");
@@ -1557,7 +1563,7 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
         InitMatrix((uint32_t*)matrices[MAT_C].ptr,testCase.TOTAL_M, testCase.TOTAL_N, matrices[MAT_C].dims.cols, FILL_WITH_ZERO, 2);
         InitMatrix((uint32_t*)matrices[MAT_R].ptr,testCase.TOTAL_M, testCase.TOTAL_N, matrices[MAT_R].dims.cols, FILL_WITH_ZERO, 2);
 
-        if (m_transpose_when_needed || m_validate_matrix_result)
+        if ((m_transpose_when_needed || m_validate_matrix_result) && tt != TT_MXM_BASIC)
         {
             if (layoutA_Mfirst) // Matrix A M-First?
                 TransposeMatrix((uint8_t*)matrices[MAT_A].ptr, matrices[MAT_A].dims.rows, matrices[MAT_A].dims.cols, "layoutA_Mfirst");
@@ -1572,6 +1578,14 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
         return std::nullopt;
     }
 
+    // Save original (pre-transform) A and B for validation (TT_MXM_BASIC only).
+    std::vector<uint8_t> savedA, savedB;
+    if (m_validate_matrix_result && tt == TT_MXM_BASIC)
+    {
+        savedA.assign((const uint8_t*)matrices[MAT_A].ptr, (const uint8_t*)matrices[MAT_A].ptr + matrices[MAT_A].bufferSize);
+        savedB.assign((const uint8_t*)matrices[MAT_B].ptr, (const uint8_t*)matrices[MAT_B].ptr + matrices[MAT_B].bufferSize);
+    }
+
     // For Tiled-K-first layout: transform matrices A and B in-place after standard initialization.
     // C and D (result) matrices are NOT transformed.
     if (tt == TT_MXM_BASIC)
@@ -1581,8 +1595,15 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
             using T = std::remove_pointer_t<decltype(ptrA)>;
             std::vector<T> tempA(testCase.TOTAL_M * testCase.TOTAL_K);
             std::vector<T> tempB(testCase.TOTAL_K * testCase.TOTAL_N);
-            TransformMatrixToTiledKfirst(ptrA, testCase.TOTAL_M, testCase.TOTAL_K, tempA.data());
-            TransformMatrixToTiledKfirst(ptrB, testCase.TOTAL_K, testCase.TOTAL_N, tempB.data());
+            // A: tile in K-direction with TILE_K (row-major load, stride=TILE_K)
+            TransformMatrixToTiledKfirst(ptrA, testCase.TOTAL_M, testCase.TOTAL_K, tempA.data(), testCase.TILE_K);
+            // B: transpose (K×N → N×K) then tile with TILE_K for col-major shader load (stride=TILE_K).
+            // This ensures stride >= TILE_K bytes regardless of TILE_N, avoiding hardware minimum stride issues.
+            std::vector<T> tempBT(testCase.TOTAL_K * testCase.TOTAL_N);
+            for (uint32_t kk = 0; kk < testCase.TOTAL_K; kk++)
+                for (uint32_t nn = 0; nn < testCase.TOTAL_N; nn++)
+                    tempBT[nn * testCase.TOTAL_K + kk] = ptrB[kk * testCase.TOTAL_N + nn];
+            TransformMatrixToTiledKfirst(tempBT.data(), testCase.TOTAL_N, testCase.TOTAL_K, tempB.data(), testCase.TILE_K);
             std::memcpy(matrices[MAT_A].ptr, tempA.data(), tempA.size() * sizeof(T));
             std::memcpy(matrices[MAT_B].ptr, tempB.data(), tempB.size() * sizeof(T));
         };
@@ -1811,6 +1832,118 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
     result = vkQueueWaitIdle(submission_queue);
     CHECK_VK(result);
 
+    // Compare GPU result against CPU reference matmul (TT_MXM_BASIC only).
+    if (m_validate_matrix_result && tt == TT_MXM_BASIC && !savedA.empty())
+    {
+        const uint32_t M  = testCase.TOTAL_M;
+        const uint32_t N  = testCase.TOTAL_N;
+        const uint32_t K  = testCase.TOTAL_K;
+        const uint32_t RC = M * N;
+
+        // Compute reference result into matrixR_CPU_fp32.
+        // Loop order (m, k outer; n inner) is cache-friendly for row-major A and B.
+        auto cpuRef = [&](auto* A, auto* B)
+        {
+            std::fill(matrixR_CPU_fp32, matrixR_CPU_fp32 + RC, 0.0f);
+            for (uint32_t m = 0; m < M; ++m)
+                for (uint32_t k = 0; k < K; ++k)
+                {
+                    const float a = (float)A[m * K + k];
+                    for (uint32_t n = 0; n < N; ++n)
+                        matrixR_CPU_fp32[m * N + n] += a * (float)B[k * N + n];
+                }
+        };
+
+        auto compare = [&](auto* gpu, float tol, const char* label) -> bool
+        {
+            // Use 2D indexing to account for row-stride padding and layoutR_Mfirst.
+            // layoutR_Mfirst=false (N-first/row-major): R[m][n] = gpu[m * strideR + n]
+            // layoutR_Mfirst=true  (M-first/col-major): R[m][n] = gpu[n * strideR + m]
+            const uint32_t strideR = testCase.strideRinElements;
+            float maxErr = 0.0f;
+            uint32_t maxErrM = 0, maxErrN = 0;
+            for (uint32_t mi = 0; mi < M; ++mi)
+            {
+                for (uint32_t ni = 0; ni < N; ++ni)
+                {
+                    const uint32_t gpu_idx = layoutR_Mfirst
+                        ? (ni * strideR + mi)
+                        : (mi * strideR + ni);
+                    const float gpu_val = (float)gpu[gpu_idx];
+                    const float cpu_val = matrixR_CPU_fp32[mi * N + ni];
+                    const float diff    = fabsf(gpu_val - cpu_val);
+                    const float ref     = fabsf(cpu_val);
+                    const float relErr  = ref > 1.0f ? diff / ref : diff;
+                    if (relErr > maxErr) { maxErr = relErr; maxErrM = mi; maxErrN = ni; }
+                }
+            }
+            const bool pass = maxErr <= tol;
+            LOGI("Validation [%s]: %s  max_err=%.5f  tol=%.5f  at[%u,%u]\n",
+                 label, pass ? "PASS" : "FAIL", maxErr, tol, maxErrM, maxErrN);
+            return pass;
+        };
+
+        // Exact integer CPU reference: accumulate in int64 to avoid float32 rounding
+        // for large K (e.g. INT8 with K=4096 can reach ~66M, past float32 exact range).
+        // GPU computes exact int32 — so we compare directly with zero tolerance.
+        std::vector<int64_t> matrixR_CPU_i64;
+        auto cpuRefInt = [&](auto* A, auto* B)
+        {
+            matrixR_CPU_i64.assign(RC, 0);
+            for (uint32_t m = 0; m < M; ++m)
+                for (uint32_t k = 0; k < K; ++k)
+                {
+                    const int64_t a = (int64_t)A[m * K + k];
+                    for (uint32_t n = 0; n < N; ++n)
+                        matrixR_CPU_i64[m * N + n] += a * (int64_t)B[k * N + n];
+                }
+        };
+
+        // Exact comparison for integer types: GPU result must match CPU i64 exactly.
+        auto compareExact = [&](auto* gpu, const char* label) -> bool
+        {
+            const uint32_t strideR = testCase.strideRinElements;
+            int64_t maxErr = 0;
+            uint32_t maxErrM = 0, maxErrN = 0;
+            for (uint32_t mi = 0; mi < M; ++mi)
+            {
+                for (uint32_t ni = 0; ni < N; ++ni)
+                {
+                    const uint32_t gpu_idx = layoutR_Mfirst
+                        ? (ni * strideR + mi)
+                        : (mi * strideR + ni);
+                    const int64_t diff = llabs((int64_t)gpu[gpu_idx] - matrixR_CPU_i64[mi * N + ni]);
+                    if (diff > maxErr) { maxErr = diff; maxErrM = mi; maxErrN = ni; }
+                }
+            }
+            const bool pass = (maxErr == 0);
+            LOGI("Validation [%s]: %s  max_err=%lld  at[%u,%u]\n",
+                 label, pass ? "PASS" : "FAIL", (long long)maxErr, maxErrM, maxErrN);
+            return pass;
+        };
+
+        if (test_description.input_type == VK_COMPONENT_TYPE_FLOAT32_KHR)
+        {
+            cpuRef((float*)savedA.data(), (float*)savedB.data());
+            test_result.validation_pass = compare((float*)matrices[MAT_R].ptr, 1e-3f, "FP32");
+        }
+        else if (test_description.input_type == VK_COMPONENT_TYPE_FLOAT16_KHR)
+        {
+            cpuRef((FLOAT16*)savedA.data(), (FLOAT16*)savedB.data());
+            test_result.validation_pass = compare((FLOAT16*)matrices[MAT_R].ptr, 5e-2f, "FP16");
+        }
+        else if (test_description.input_type == VK_COMPONENT_TYPE_SINT8_KHR)
+        {
+            cpuRefInt((int8_t*)savedA.data(), (int8_t*)savedB.data());
+            test_result.validation_pass = compareExact((int32_t*)matrices[MAT_R].ptr, "SINT8");
+        }
+        else if (test_description.input_type == VK_COMPONENT_TYPE_UINT8_KHR)
+        {
+            cpuRefInt((uint8_t*)savedA.data(), (uint8_t*)savedB.data());
+            test_result.validation_pass = compareExact((uint32_t*)matrices[MAT_R].ptr, "UINT8");
+        }
+    }
+
     auto destroyMatrixDesc = [](VkDevice device, MatrixDesc & m)
     {
         vkDestroyBuffer(device, m.hostBuffer, NULL);
@@ -1828,6 +1961,11 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
     vkDestroyPipeline(m_vulkan_instance.m_VulkanDevice, pipeline, NULL);
 
     vkDestroyShaderModule(m_vulkan_instance.m_VulkanDevice, shaderModule, NULL);
+
+    delete[] matrixR_CPU_fp32;
+    delete[] matrixR_CPU_fp16;
+    delete[] matrixR_CPU_sint32;
+    delete[] matrixR_CPU_uint32;
 
     return test_result;
 }

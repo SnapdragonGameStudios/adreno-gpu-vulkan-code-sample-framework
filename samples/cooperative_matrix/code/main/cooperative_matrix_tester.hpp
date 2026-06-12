@@ -13,6 +13,7 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
+#include <optional>
 #include <glm/glm.hpp>
 
 enum { MAT_A = 0, MAT_B = 1, MAT_C = 2, MAT_R = 3, NUM_MATS = 4 };
@@ -66,6 +67,7 @@ class CooperativeMatrixRunner
         double time_total;
         double TOPS;
         double percentage;
+        std::optional<bool> validation_pass; // set when validate checkbox is on
     };
 
     struct SizeConfiguration
@@ -143,4 +145,5 @@ private:
     uint32_t m_total_processed_tests = 0;
     std::vector<TestGroupTemplateDescription> m_test_group_templates;
     std::vector<TestGroup> m_test_groups;
+
 };

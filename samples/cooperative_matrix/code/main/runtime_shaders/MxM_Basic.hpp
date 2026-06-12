@@ -11,16 +11,20 @@
 
 // Tiled-K-first layout MxM shader.
 //
-// Matrices A and B are pre-transformed on the host using TransformMatrixToTiledKfirst<T>
+// Matrix A is pre-transformed on the host using TransformMatrixToTiledKfirst<T>
 // before being uploaded to GPU memory.  C and D (result) remain in their original layout.
+// Matrix B is pre-transformed on the host by first transposing (K×N → N×K) and then
+// applying TransformMatrixToTiledKfirst<T> with tileK=TILE_K, so that the shader can
+// load B col-major with stride=TILE_K.  This guarantees stride >= TILE_K bytes for all
+// TILE_N values, avoiding hardware minimum-stride issues when TILE_N < TILE_K.
 //
-// Tiled-K-first addressing:
-//   A offset = row * TILE_K + step * TOTAL_N
-//   B offset = col * TILE_K + step * TOTAL_M
-//   stride   = TILE_K  (Kfirst = 1)
+// A addressing (tileK=TILE_K, row-major load, stride=TILE_K):
+//   out[(kk/TILE_K)*TILE_K*TOTAL_M + mm*TILE_K + kk%TILE_K] = A_in[mm*TOTAL_K + kk]
+//   Shader start: row * TILE_K + step * TOTAL_M
 //
-// This matches the host-side tiling formula:
-//   out[(kk/tileK)*tileK*M + kk%tileK + mm*tileK] = in[mm*K + kk]
+// B addressing (B transposed then tileK=TILE_K, col-major load, stride=TILE_K):
+//   out[(kk/TILE_K)*TILE_K*TOTAL_N + nn*TILE_K + kk%TILE_K] = B_in[kk*TOTAL_N + nn]
+//   Shader start: step * TOTAL_N + col * TILE_K
 //
 const char* Test01_MxM_Basic = R"(
 #version 450 core
@@ -90,19 +94,22 @@ void main()
         // Tiled-K-first addressing.
         // Host pre-transforms A[M,K] and B[K,N] into tiled layout before upload.
         //
-        // A tiled layout: (kk/TILE_K)*TILE_K*M + mm*TILE_K + kk%TILE_K
-        //   => start for this workgroup's row at K-step:  row * TILE_K + step * TOTAL_N
+        // A tiled layout: (kk/TILE_K)*TILE_K*TOTAL_M + mm*TILE_K + kk%TILE_K
+        //   => start for this workgroup's M-tile at K-step: row * TILE_K + step * TOTAL_M
+        //   => stride = TILE_K, row-major load
         //
-        // B tiled layout: (kk/TILE_K)*TILE_K*N + nn*TILE_K + kk%TILE_K
-        //   => start for this workgroup's col at K-step:  col * TILE_K + step * TOTAL_M
-        uint32_t subMatrixAStartInElements = row * TILE_K + step * TOTAL_N;
-        uint32_t subMatrixBStartInElements = col * TILE_K + step * TOTAL_M;
+        // B tiled layout: B is first transposed (K×N → N×K), then tiled with TILE_K.
+        //   Tiled B_T: (kk/TILE_K)*TILE_K*TOTAL_N + nn*TILE_K + kk%TILE_K
+        //   => start for this workgroup's N-tile at K-step: step * TOTAL_N + col * TILE_K
+        //   => stride = TILE_K, col-major load (so stride >= TILE_K bytes for all TILE_N)
+        uint32_t subMatrixAStartInElements = row * TILE_K + step * TOTAL_M;
+        uint32_t subMatrixBStartInElements = step * TOTAL_N + col * TILE_K;
 
         coopmat<A_TYPE, gl_ScopeSubgroup, TILE_M, TILE_K, gl_MatrixUseA> matA;
-        coopMatLoad(matA, inputA.x, subMatrixAStartInElements, TILE_K, 1 /*Kfirst*/);
+        coopMatLoad(matA, inputA.x, subMatrixAStartInElements, TILE_K, 0 /*row-major: A[dr][dk] at start + dr*TILE_K + dk*/);
 
         coopmat<A_TYPE, gl_ScopeSubgroup, TILE_K, TILE_N, gl_MatrixUseB> matB;
-        coopMatLoad(matB, inputB.x, subMatrixBStartInElements, TILE_K, 1 /*Kfirst*/);
+        coopMatLoad(matB, inputB.x, subMatrixBStartInElements, TILE_K, 1 /*col-major: B[dk][dn] at start + dn*TILE_K + dk*/);
 
         matR = coopMatMulAdd(matA, matB, matR);
     }
