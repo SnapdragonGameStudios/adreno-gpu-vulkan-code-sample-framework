@@ -160,7 +160,11 @@ Vulkan::~Vulkan()
     }
 
     //DestroySyncElements();
-    vkDestroySemaphore(m_VulkanDevice, m_RenderCompleteSemaphore, nullptr);
+    if (m_RenderCompleteSemaphore != VK_NULL_HANDLE)
+    {
+        vkDestroySemaphore(m_VulkanDevice, m_RenderCompleteSemaphore, nullptr);
+        m_RenderCompleteSemaphore = VK_NULL_HANDLE;
+    }
 
     // Destroy Device
     vkDestroyDevice( m_VulkanDevice, nullptr );
@@ -857,7 +861,11 @@ bool Vulkan::CreateInstance()
         .enabledExtensionCount = (uint32_t)InstanceExtensionNames.size(),
         .ppEnabledExtensionNames = InstanceExtensionNames.data()
     }};
-    InstanceInfoStruct->flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+    auto findResult = std::find(InstanceLayerNames.begin(), InstanceLayerNames.end(), "VK_KHR_portability_enumeration");
+    if (findResult != InstanceLayerNames.end())
+    {
+        InstanceInfoStruct->flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+    }
 
     // ********************************
     // Potentially add Validation layer feature settings.
@@ -1232,6 +1240,13 @@ bool Vulkan::GetDataGraphProcessingEngine()
 {
     if (!m_VulkanGraphicsQueueSupportsDataGraph)
     {
+        return true;
+    }
+
+    if (vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM == nullptr)
+    {
+        LOGW("*** vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM function not loaded. Disabling data graph.");
+        m_VulkanGraphicsQueueSupportsDataGraph = false;
         return true;
     }
 
@@ -2780,7 +2795,6 @@ bool Vulkan::InitSwapChain()
         {
             return false;
         }
-
         // Create the wait fences, one per swapchain image
         const VkFenceCreateInfo fenceInfo{
             .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
@@ -2798,6 +2812,12 @@ bool Vulkan::InitSwapChain()
             .flags = 0
         };
         retVal = vkCreateSemaphore(m_VulkanDevice, &semCreateInfo, nullptr, &swapchainBuffer.semaphore);
+        if (!CheckVkError("vkCreateSemaphore()", retVal))
+        {
+            return false;
+        }
+
+        retVal = vkCreateSemaphore(m_VulkanDevice, &semCreateInfo, nullptr, &swapchainBuffer.renderCompleteSemaphore);
         if (!CheckVkError("vkCreateSemaphore()", retVal))
         {
             return false;
@@ -3391,17 +3411,40 @@ void Vulkan::DestroySwapChain()
 {
     if( m_SwapchainDepth.format != TextureFormat::UNDEFINED )
     {
+        if( m_SwapchainDepth.view != VK_NULL_HANDLE )
+        {
+            vkDestroyImageView( m_VulkanDevice, m_SwapchainDepth.view, nullptr );
+            m_SwapchainDepth.view = VK_NULL_HANDLE;
+        }
         m_MemoryManager.Destroy( std::move( m_SwapchainDepth.image ) );
         m_SwapchainDepth.format = TextureFormat::UNDEFINED;
-        vkDestroyImageView( m_VulkanDevice, m_SwapchainDepth.view, nullptr );
-        m_SwapchainDepth.view = VK_NULL_HANDLE;
     }
 
     for (auto& swapchainBuffer : m_SwapchainBuffers)
     {
-        vkDestroySemaphore(m_VulkanDevice, swapchainBuffer.semaphore, nullptr);
-        vkDestroyFence(m_VulkanDevice, swapchainBuffer.fence, nullptr);
-        vkDestroyImageView(m_VulkanDevice, swapchainBuffer.view, nullptr);
+        if (swapchainBuffer.semaphore != VK_NULL_HANDLE)
+        {
+            vkDestroySemaphore(m_VulkanDevice, swapchainBuffer.semaphore, nullptr);
+            swapchainBuffer.semaphore = VK_NULL_HANDLE;
+        }
+
+        if (swapchainBuffer.renderCompleteSemaphore != VK_NULL_HANDLE)
+        {
+            vkDestroySemaphore(m_VulkanDevice, swapchainBuffer.renderCompleteSemaphore, nullptr);
+            swapchainBuffer.renderCompleteSemaphore = VK_NULL_HANDLE;
+        }
+
+        if (swapchainBuffer.fence != VK_NULL_HANDLE)
+        {
+            vkDestroyFence(m_VulkanDevice, swapchainBuffer.fence, nullptr);
+            swapchainBuffer.fence = VK_NULL_HANDLE;
+        }
+        
+        if (swapchainBuffer.view != VK_NULL_HANDLE)
+        {
+            vkDestroyImageView(m_VulkanDevice, swapchainBuffer.view, nullptr);
+            swapchainBuffer.view = VK_NULL_HANDLE;
+        }
         assert(!swapchainBuffer.framebuffer);                   // framebuffers destroyed by DestroyFramebuffers
         swapchainBuffer.image = VK_NULL_HANDLE;                 // images are owned by the m_VulkanSwapchain
     }
@@ -3426,7 +3469,10 @@ void Vulkan::DestroySwapchainRenderPass()
 void Vulkan::DestroyFrameBuffers()
 //-----------------------------------------------------------------------------
 {
-    m_SwapchainBuffers.clear();
+    for (auto& swapchainBuffer : m_SwapchainBuffers)
+    {
+        swapchainBuffer.framebuffer = {};
+    }
 }
 
 //-----------------------------------------------------------------------------
@@ -4472,7 +4518,7 @@ Vulkan::BufferIndexAndFence Vulkan::SetNextBackBuffer()
     const uint32_t CurrentIndex = m_SwapchainCurrentIndx++;
     if( m_SwapchainCurrentIndx == m_SwapchainImageCount )
         m_SwapchainCurrentIndx = 0;
-    return {CurrentIndex, SwapchainPresentIndx, Fence, BackBufferSemaphore};
+    return {CurrentIndex, SwapchainPresentIndx, Fence, BackBufferSemaphore, m_SwapchainBuffers[SwapchainPresentIndx].renderCompleteSemaphore};
 }
 
 //-----------------------------------------------------------------------------
@@ -5401,4 +5447,3 @@ void Vulkan::ReportFramebufferProperties( VkFramebuffer vkFrameBuffer ) const
         }
     }
 }
-

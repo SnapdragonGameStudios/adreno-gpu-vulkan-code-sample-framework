@@ -1,0 +1,2 @@
+gCameraRotateSpeed=4.0
+gCameraMoveSpeed=5.0f

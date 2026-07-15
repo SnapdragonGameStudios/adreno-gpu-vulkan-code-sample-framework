@@ -179,3 +179,95 @@ function(add_texture _texture_path)
 
     file(COPY ${cached_output} DESTINATION ${TEXTURE_PATH})
 endfunction()
+
+function(add_all_ktx_from_path _path)
+    cmake_parse_arguments(args "UASTC" "SCALE;DESTINATION" "" ${ARGN})
+
+        if(DEFINED GLOBAL_ASSET_BASE_PATH)
+        set(_path "${GLOBAL_ASSET_BASE_PATH}/${_path}")
+    endif() 
+
+    if(DEFINED args_SCALE)
+        message(DEBUG "WARNING: Scale argument passed to add_all_ktx_from_path() which is not implemented, ignoring argument.")
+    endif()
+
+    if(DEFINED args_UASTC)
+        message(DEBUG "WARNING: UASTC argument passed to add_all_ktx_from_path() which is not implemented, ignoring argument.")
+    endif()
+
+    set(TEXTURE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Media/Textures")
+    if(DEFINED args_DESTINATION)
+        set(TEXTURE_PATH "${args_DESTINATION}")
+    elseif(DEFINED TEXTURE_DESTINATION)
+        set(TEXTURE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/${TEXTURE_DESTINATION}")
+    endif()
+
+       if(NOT EXISTS ${TEXTURE_PATH})
+        file(MAKE_DIRECTORY ${TEXTURE_PATH})
+    endif()
+
+    file(GLOB ktx_textures "${_path}/*.ktx")
+    list(LENGTH ktx_textures total_textures)
+    
+    message(STATUS "Preparing to copy ${total_textures} textures from '${_path}'")
+    
+    foreach(file ${ktx_textures})
+        math(EXPR current_index "${current_index} + 1")
+    
+        get_filename_component(output_filename ${file} NAME)
+        set(final_output "${TEXTURE_PATH}/${output_filename}")
+        file(COPY "${_path}/${output_filename}" DESTINATION "${TEXTURE_PATH}")
+
+        # Progress bar simulation
+        math(EXPR percent_done "(${current_index} * 100) / ${total_textures}")
+        math(EXPR filled "(${percent_done} / 10)")
+        math(EXPR empty "10 - ${filled}")
+
+        set(bar "")
+        if(filled GREATER 0)
+            foreach(i RANGE 1 ${filled})
+                set(bar "${bar}#")
+            endforeach()
+        endif()
+
+        if(empty GREATER 0)
+            foreach(i RANGE 1 ${empty})
+                set(bar "${bar}-")
+            endforeach()
+        endif()
+
+        message(STATUS "[${bar}] ${percent_done}% - Processed: '${output_filename}'")
+
+    endforeach()
+endfunction()
+
+function(add_ktx _texture_path)
+
+    if(DEFINED GLOBAL_ASSET_BASE_PATH)
+        set(_texture_path "${GLOBAL_ASSET_BASE_PATH}/${_texture_path}")
+    endif()  
+
+    if(NOT EXISTS ${_texture_path})
+        message(WARNING "TexturePackager -> Requested texture doesn't exist: ${_texture_path}")
+        return()
+    endif()  
+
+    set(TEXTURE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Media/Textures")
+    if(DEFINED args_DESTINATION)
+        set(TEXTURE_PATH "${args_DESTINATION}")
+    elseif(DEFINED TEXTURE_DESTINATION)
+        set(TEXTURE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/${TEXTURE_DESTINATION}")
+    endif()
+
+    if(NOT EXISTS ${TEXTURE_PATH})
+        file(MAKE_DIRECTORY ${TEXTURE_PATH})
+    endif()
+
+    if(EXISTS "${TEXTURE_PATH}/${_texture_path}")
+        return()
+    endif()
+
+    message(STATUS "Copying KTX texture: '${output_filename}'")
+    file(COPY ${_texture_path} DESTINATION ${TEXTURE_PATH})
+
+endfunction()

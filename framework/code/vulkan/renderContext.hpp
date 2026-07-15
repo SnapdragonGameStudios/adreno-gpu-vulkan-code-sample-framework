@@ -18,6 +18,7 @@
 #include "texture/texture.hpp"
 #include "texture/textureFormat.hpp"    // for msaa
 #include "texture/vulkan/texture.hpp"
+#include <string>
 
 // Forward declarations
 class Vulkan;
@@ -293,6 +294,8 @@ public:
     RenderContext(RenderPass<Vulkan>, Framebuffer<Vulkan>, std::string name) noexcept;
     RenderContext(std::span<TextureFormat>, TextureFormat, TextureFormat, std::string name) noexcept;
 
+    RenderContext<Vulkan> Copy() const;
+
     // this
     struct RenderPassContextData {
         RenderPassContextData( RenderPass<Vulkan>, Pipeline<Vulkan>, Framebuffer<Vulkan>, RenderPassClearData) noexcept;
@@ -345,4 +348,3 @@ public:
 //     std::vector< VkSampleCountFlagBits> passMultisample;
 //     std::vector< RenderingPassContext>  passContexts;
 // };
-

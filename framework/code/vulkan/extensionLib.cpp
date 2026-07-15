@@ -275,6 +275,35 @@ namespace ExtensionLib
     }
 #endif // VK_KHR_cooperative_matrix
 
+#if VK_QCOM_cooperative_matrix_conversion
+    void Ext_VK_QCOM_cooperative_matrix_conversion::PrintFeatures() const
+    {
+        LOGI("VK_QCOM_cooperative_matrix_conversion (VkPhysicalDeviceCooperativeMatrixConversionFeaturesQCOM): ");
+        LOGI("    cooperativeMatrixConversion: %s", this->AvailableFeatures.cooperativeMatrixConversion ? "True" : "False");
+    }
+    void Ext_VK_QCOM_cooperative_matrix_conversion::PrintProperties() const
+    {
+        LOGI("VK_QCOM_cooperative_matrix_conversion (VkPhysicalDeviceCooperativeMatrixConversionPropertiesQCOM): ");
+    }
+#endif // VK_QCOM_cooperative_matrix_conversion
+
+#if VK_KHR_vulkan_memory_model
+    void Ext_VK_KHR_vulkan_memory_model::PrintFeatures() const
+    {
+        LOGI("VK_KHR_vulkan_memory_model (VkPhysicalDeviceVulkanMemoryModelFeatures): ");
+        LOGI("    vulkanMemoryModel: %s", this->AvailableFeatures.vulkanMemoryModel ? "True" : "False");
+        LOGI("    vulkanMemoryModelDeviceScope: %s", this->AvailableFeatures.vulkanMemoryModelDeviceScope ? "True" : "False");
+    }
+#endif // VK_KHR_vulkan_memory_model
+
+#if VK_KHR_maintenance4
+    void Ext_VK_KHR_maintenance4::PrintFeatures() const
+    {
+        LOGI("VK_KHR_maintenance4 (VkPhysicalDeviceMaintenance4Features): ");
+        LOGI("    maintenance4: %s", this->AvailableFeatures.maintenance4 ? "True" : "False");
+    }
+#endif // VK_KHR_maintenance4
+
 #if VK_KHR_create_renderpass2
     void Ext_VK_KHR_create_renderpass2::LookupFunctionPointers( VkInstance vkInstance )
     {
@@ -539,6 +568,7 @@ namespace ExtensionLib
         RequestedFeatures.tileShadingAtomicOps = AvailableFeatures.tileShadingAtomicOps;
         RequestedFeatures.tileShadingFragmentStage = AvailableFeatures.tileShadingFragmentStage;
         RequestedFeatures.tileShadingPerTileDraw = AvailableFeatures.tileShadingPerTileDraw;
+        RequestedFeatures.tileShadingPerTileDispatch = AvailableFeatures.tileShadingPerTileDispatch;
         RequestedFeatures.tileShadingApron = AvailableFeatures.tileShadingApron;
         RequestedFeatures.tileShadingDepthAttachments = AvailableFeatures.tileShadingDepthAttachments;
         RequestedFeatures.tileShadingStencilAttachments = AvailableFeatures.tileShadingStencilAttachments;

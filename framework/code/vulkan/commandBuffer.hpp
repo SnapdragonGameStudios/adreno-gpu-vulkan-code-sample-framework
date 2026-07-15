@@ -43,7 +43,7 @@ public:
     CommandList(CommandList<Vulkan>&&) noexcept;
     CommandList<Vulkan>& operator=(CommandList<Vulkan>&&) noexcept;
     
-    // Curtesty
+    // Curtesy
     operator VkCommandBuffer() const { return m_VkCommandBuffer; }
 
     bool Initialize(Vulkan* pVulkan, const std::string& Name = {}, CommandListBase::Type CmdBuffType = Type::Primary, uint32_t QueueIndex = Vulkan::eGraphicsQueue, TimerPoolBase* pTimerPool = nullptr);
@@ -74,6 +74,7 @@ public:
     bool BeginSwapchainRenderPass(uint32_t SwapchainImageIndex, const RenderPass<Vulkan>& RenderPass, const RenderPassClearData& RenderPassClearData, VkSubpassContents SubContents);
     bool BeginRenderPass(const RenderContext<Vulkan>& renderContext, VkSubpassContents SubContents = VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
     void BeginRenderPass(const VkRenderingInfo& renderingInfo); // dynamic rendering
+    void EndRendering(); // dynamic rendering
     bool NextSubpass(VkSubpassContents SubContents = VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
     bool EndRenderPass();
 

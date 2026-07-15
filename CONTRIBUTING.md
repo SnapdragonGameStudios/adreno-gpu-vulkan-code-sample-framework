@@ -6,16 +6,16 @@ Your help is essential for keeping this project great and for making it better.
 
 ## Branching Strategy
 
-In general, contributors should develop on branches based off of `master` and pull requests should be made against `master`.
+In general, contributors should develop on branches based off of `main` and pull requests should be made against `main`.
 
 ## Submitting a pull request
 
 1. Please read our [code of conduct](CODE-OF-CONDUCT.md) and [license](LICENSE.txt).
 2. Fork and clone the repository.
-3. Create a new branch based on `master`: `git checkout -b <my-branch-name> master`.
+3. Create a new branch based on `main`: `git checkout -b <my-branch-name> main`.
 4. Make your changes, and test build and runtime on an Android device.
 5. Commit your changes using the [DCO](http://developercertificate.org/). You can attest to the DCO by commiting with the **-s** or **--signoff** options or manually adding the "Signed-off-by".
-6. Push to your fork and [submit a pull request](https://github.com/quic/adreno-gpu-vulkan-code-sample-framework/pulls) from your branch to `master`.
+6. Push to your fork and [submit a pull request](https://github.com/SnapdragonGameStudios/adreno-gpu-vulkan-code-sample-framework/pulls) from your branch to `main`.
 7. Pat yourself on the back and wait for your pull request to be reviewed.
 
 Here are a few things you can do that will increase the likelihood of your pull request to be accepted:

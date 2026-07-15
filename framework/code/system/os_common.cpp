@@ -193,7 +193,7 @@ void LOGW(const char* pszFormat, ...)
 {
     va_list args;
     va_start(args, pszFormat);
-    LOG_(FOREGROUND_BLUE | FOREGROUND_GREEN, pszFormat, args);
+    LOG_(FOREGROUND_RED | FOREGROUND_GREEN, pszFormat, args);
     va_end(args);
 }
 //-----------------------------------------------------------------------------

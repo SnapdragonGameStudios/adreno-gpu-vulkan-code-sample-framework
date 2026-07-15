@@ -8,6 +8,9 @@
 
 #include "imguiAndroid.hpp"
 #define NOMINMAX
+#if defined(OS_ANDROID)
+#include <android/native_window.h>
+#endif
 #include <imgui/imgui.h>
 
 
@@ -28,6 +31,23 @@ bool GuiImguiPlatform::Initialize(uintptr_t windowHandle, TextureFormat renderFo
     {
         return false;
     }
+
+    // Android touch coordinates are reported in native window coordinates.
+    // Keep ImGui's logical DisplaySize in that same coordinate space, while
+    // DisplayFramebufferScale maps draw data to the actual render target.
+#if defined(OS_ANDROID)
+    if (windowHandle != 0)
+    {
+        ANativeWindow* window = reinterpret_cast<ANativeWindow*>(windowHandle);
+        const int32_t nativeWidth = ANativeWindow_getWidth(window);
+        const int32_t nativeHeight = ANativeWindow_getHeight(window);
+        if (nativeWidth > 0 && nativeHeight > 0)
+        {
+            deviceWidth = static_cast<uint32_t>(nativeWidth);
+            deviceHeight = static_cast<uint32_t>(nativeHeight);
+        }
+    }
+#endif
 
     ImGuiIO& io = ImGui::GetIO();
     io.DeltaTime = 1.0f / 60.0f;                // set the time elapsed since the previous frame (in seconds)

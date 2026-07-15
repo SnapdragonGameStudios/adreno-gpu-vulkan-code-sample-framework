@@ -7,6 +7,7 @@ samples\
 	vulkan; framework\vulkan
 		vk_extensions
 			cooperative_matrix
+			fully_fused_mlp
 			graph_pipelines
 			image_processing
 			tile_shading
@@ -22,7 +23,7 @@ samples\
 framework\
 	base; framework\external\GameSampleAssets, framework\external\glm, framework\external\tinyobjloader, framework\external\tinygltf, framework\external\json, framework\external\eigen
 	generic; framework\base, framework\external\imgui, framework\external\implot, framework\external\portable-file-dialogs, framework\external\KTX-Software, Tools
-	vulkan; framework\generic, framework\external\volk, framework\external\SPIRV-Cross, framework\external\glslang, framework\external\half, framework\external\VulkanMemoryAllocator, framework\external\Vulkan-Headers
+	vulkan; framework\generic, framework\external\volk, framework\external\SPIRV-Cross, framework\external\glslang, framework\external\half, framework\external\slang, framework\external\VulkanMemoryAllocator, framework\external\Vulkan-Headers
 	external\
 			VulkanMemoryAllocator @ https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/archive/refs/tags/v3.0.1.tar.gz MD5:8571f3def0ff86f228e2864c907ba0b3
 			tinyobjloader @ https://github.com/tinyobjloader/tinyobjloader/archive/e39c1737bc61c8dce28be7932cfe839d408e7838.zip
@@ -36,9 +37,9 @@ framework\
 			volk @ https://github.com/zeux/volk/archive/d34b5e0d46b28c22d69b97ee7da074b6e68d9e25.zip
 			SPIRV-Cross @ https://github.com/KhronosGroup/SPIRV-Cross/archive/7affe74d77f93a622bb5002789d5332d32e512ee.zip
 			glslang @ https://github.com/KhronosGroup/glslang/archive/3a7f78758f8faa9a6e059b09e25fc64ede7fbfb0.zip
+			slang @ https://github.com/shader-slang/slang/archive/9c2024a7509baae921083d49a56e1321c51f00ec.zip
 			json @ https://github.com/nlohmann/json/releases/download/v3.10.5/json.tar.xz MD5:4b67aba51ddf17c798e80361f527f50e
 			eigen @ https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz MD5:4c527a9171d71a72a9d4186e65bea559
 			KTX-Software @ https://github.com/KhronosGroup/KTX-Software/archive/refs/tags/v4.1.0.tar.gz MD5:b35fc412cdb3a00aa92aadcdd1e5f004 PATCH:..\cmake\KTX-Software.diff; Tools
 			D3D12MemoryAllocator @ https://github.com/GPUOpen-LibrariesAndSDKs/D3D12MemoryAllocator/archive/7597f717c7b32b74d263009ecc15985b517585c7.zip
 			half @ https://github.com/ramenhut/half/archive/43473931db0fae8ecef4ff1492ad18061e3600ec.zip
-

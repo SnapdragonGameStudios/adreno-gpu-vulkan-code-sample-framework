@@ -1,12 +1,12 @@
 apply plugin: 'com.android.library'
 
 android {
-    compileSdkVersion 33
+    compileSdkVersion 34
 	namespace "com.qualcomm.sgs.framework"
 
     defaultConfig {
-        minSdkVersion 26
-        targetSdkVersion 33
+        minSdkVersion 33
+        targetSdkVersion 34
         ndkVersion "${project.ndkVersionDefault}"
         ndk {
             abiFilters 'arm64-v8a'
@@ -24,25 +24,19 @@ android {
     }
 
     buildTypes {
-        release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-            packagingOptions {
-                //doNotStrip '**/*.so'
-            }
-        }
         debug {
             debuggable = true
             jniDebuggable = true
             packagingOptions {
                 //doNotStrip '**/*.so'
             }
+            signingConfig signingConfigs.debug
         }
     }
 
     sourceSets {
         main {
-            manifest.srcFile 'android/AndroidManifest.xml'
+            // manifest.srcFile 'android/AndroidManifest.xml'
         }
     }
 
@@ -52,44 +46,5 @@ android {
             path 'CMakeLists.txt'
             buildStagingDirectory "../build/cxx/${project.name}"
         }
-    }
-
-    task extractFrameworkAarDebug(type: Copy) {
-        def aarPath = file("${project.buildDir}/outputs/aar/framework-debug.aar")
-
-        from zipTree("${aarPath}")
-        into "${project.buildDir}/extracted/Debug"
-        include "**/*.so"
-
-        eachFile {
-            def segments = it.getRelativePath().getSegments() as List
-            println segments
-            it.setPath(segments.tail().join("/"))
-            return it
-        }
-        includeEmptyDirs = false
-    }
-
-    task extractFrameworkAarRelease(type: Copy) {
-        def aarPath = file("${project.buildDir}/outputs/aar/framework-release.aar")
-        doLast {
-            project.logger.lifecycle("Extracted ${aarPath} file(s).... into ${project.buildDir}/extracted/RelWithDebInfo/")
-        }
-        from zipTree("${aarPath}")
-        into "${project.buildDir}/extracted/RelWithDebInfo/"
-        include "**/*.so"
-
-        eachFile {
-            def segments = it.getRelativePath().getSegments() as List
-            println segments
-            it.setPath(segments.tail().join("/"))
-            return it
-        }
-        includeEmptyDirs = false
-    }
-
-    afterEvaluate {
-        //assembleDebug.finalizedBy extractFrameworkAarDebug
-        //assembleRelease.finalizedBy extractFrameworkAarRelease
     }
 }

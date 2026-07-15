@@ -24,7 +24,11 @@
 #include "texture/textureManager.hpp"
 #include "imgui.h"
 
+#if OS_ANDROID
 VAR(bool, gUseExtension, true, kVariableNonpersistent);
+#else  // OS_ANDROID
+VAR(bool, gUseExtension, false, kVariableNonpersistent);
+#endif // OS_ANDROID
 VAR(unsigned, gBlurFilterSize, 7, kVariableNonpersistent);
 
 #if OS_ANDROID
@@ -55,12 +59,11 @@ FrameworkApplicationBase* Application_ConstructApplication()
 
 BloomImageprocessing::BloomImageprocessing() : ApplicationHelperBase()
 {
-    // Currently this extension is only supported on Android, disable it here if compiling for
-    // another target so we at least display something and doesn't just shutdown the app
-#if not defined(OS_ANDROID)
-    m_bUseExtension = false;
-#else
+    //may be available on Android only (and only if the extension is available)
+#if defined(OS_ANDROID)
     m_bUseExtension = gUseExtension;
+#else
+    m_bUseExtension = false;
 #endif // OS_ANDROID
 
     gBlurFilterSize = mini(gBlurFilterSize, 25);
@@ -77,14 +80,7 @@ void  BloomImageprocessing::PreInitializeSetVulkanConfiguration(Vulkan::AppConfi
     ApplicationHelperBase::PreInitializeSetVulkanConfiguration(config);
     config.RequiredExtension(VK_EXT_SAMPLER_FILTER_MINMAX_EXTENSION_NAME);
     config.RequiredExtension("VK_KHR_format_feature_flags2");
-    if (m_bUseExtension)
-    {
-        config.RequiredExtension<Ext_VK_QCOM_image_processing>();
-    }
-    else
-    {
-        config.OptionalExtension<Ext_VK_QCOM_image_processing>();
-    }
+    config.OptionalExtension<Ext_VK_QCOM_image_processing>();//optional means don't fail if extension is not supported (eg launched from RenderDoc or on a device without support)
 }
 
 //-----------------------------------------------------------------------------
@@ -97,48 +93,60 @@ bool BloomImageprocessing::Initialize(uintptr_t windowHandle, uintptr_t hInstanc
     }
 
     Vulkan* pVulkan = GetVulkan();
+    {
+        const auto* pExt = pVulkan->GetExtension<Ext_VK_QCOM_image_processing>();
+        const bool extensionLoaded = (pExt != nullptr) &&
+                                     (pExt->Status == VulkanExtensionStatus::eLoaded);
+        if (m_bUseExtension && !extensionLoaded)
+        {
+            LOGI("VK_QCOM_image_processing not available; falling back to non-extension shaders");
+            m_bUseExtension = false;
+        }
+    }
 
     memset(m_passes, 0, sizeof(m_passes));
 
     //--------------------------------------------------------------------------
-    // Setup Render Targets
+    // Setup Render Targets — one complete set per swapchain image so that each in-flight frame has its own intermediate render targets
     {
         const TextureFormat bloomFormat[] = { k_RtFormat };
 
-        for (uint32_t ii = 0; ii < Pass_Count; ++ii)
+        for (uint32_t buf = 0; buf < pVulkan->m_SwapchainImageCount; ++buf)
         {
-
-            uint32_t w = GlobalPassInfo[ii].renderWidth;
-            uint32_t h = GlobalPassInfo[ii].renderHeight;
-
-            if (w == 0)
+            for (uint32_t ii = 0; ii < kPassesThatNeedIntermediateRenderTargets_Count; ++ii)
             {
-                w = pVulkan->m_SurfaceWidth;
+                uint32_t w = GlobalPassInfo[ii].renderWidth;
+                uint32_t h = GlobalPassInfo[ii].renderHeight;
+
+                if (w == 0)
+                {
+                    w = pVulkan->m_SurfaceWidth;
+                }
+
+                if (h == 0)
+                {
+                    h = pVulkan->m_SurfaceHeight;
+                }
+
+                char rtNames[256];
+                snprintf(rtNames, 256, "Bloom RT buf%d pass%d %dx%d", buf, ii, w, h);
+
+                RenderPass renderPass;
+                if (!pVulkan->CreateRenderPass(bloomFormat, TextureFormat::UNDEFINED, Msaa::Samples1, RenderPassInputUsage::Clear, RenderPassOutputUsage::StoreReadOnly, true, RenderPassOutputUsage::StoreReadOnly, renderPass))
+                {
+                    LOGE("Unable to create render pass buf:%d id:%d", buf, ii);
+                    return false;
+                }
+
+                if (!m_IntermediateRts[buf][ii].Initialize(pVulkan, w, h, bloomFormat, TextureFormat::UNDEFINED, Msaa::Samples1, rtNames)
+                    || !m_IntermediateRts[buf][ii].InitializeFrameBuffer(pVulkan, renderPass))
+                {
+                    LOGE("Unable to create intermediate render target buf:%d pass:%d", buf, ii);
+                    return false;
+                }
+
+                m_RenderContexts[buf][ii] = RenderContext(std::move(renderPass), m_IntermediateRts[buf][ii].GetFrameBuffer(), rtNames);
             }
-
-            if (h == 0)
-            {
-                h = pVulkan->m_SurfaceHeight;
-            }
-
-            char rtNames[256];
-            snprintf(rtNames, 256, "Bloom RT %d %dx%d", ii, w, h);
-
-            RenderPass renderPass;
-            if (!pVulkan->CreateRenderPass(bloomFormat, TextureFormat::UNDEFINED, Msaa::Samples1, RenderPassInputUsage::Clear, RenderPassOutputUsage::StoreReadOnly, true, RenderPassOutputUsage::StoreReadOnly, renderPass))
-            {
-                LOGE("Unable to create render pass id: %d", ii);
-                return false;
-            }
-
-            if (!m_IntermediateRts[ii].Initialize(pVulkan, w, h, bloomFormat, TextureFormat::UNDEFINED, Msaa::Samples1, rtNames)
-                || !m_IntermediateRts[ii].InitializeFrameBuffer(pVulkan, renderPass))
-            {
-                LOGE("Unable to create main render target");
-                return false;
-            }
-
-            m_RenderContexts[ii] = RenderContext(std::move(renderPass), m_IntermediateRts[ii].GetFrameBuffer(), rtNames);
         }
     }
     //--------------------------------------------------------------------------
@@ -147,12 +155,16 @@ bool BloomImageprocessing::Initialize(uintptr_t windowHandle, uintptr_t hInstanc
     // Setup Shaders
     for (uint32_t ss = 0; ss < ShaderPair_Count; ++ss)
     {
+        const auto& vertexShader = ShaderSets[ss][0];
+        const auto& fragmentShader = m_bUseExtension ? ShaderSets[ss][2] : ShaderSets[ss][1];
+        LOGI("vertexShader=%s, fragmentShader=%s", vertexShader, fragmentShader);
+
         LoadShader(
             pVulkan, 
             *m_AssetManager, 
             &m_shaders[ss], 
-            std::filesystem::path(SHADER_DESTINATION_PATH).append(ShaderSets[ss][0]).string(),
-            std::filesystem::path(SHADER_DESTINATION_PATH).append(m_bUseExtension ? ShaderSets[ss][2] : ShaderSets[ss][1]).string());
+            std::filesystem::path(SHADER_DESTINATION_PATH).append(vertexShader).string(),
+            std::filesystem::path(SHADER_DESTINATION_PATH).append(fragmentShader).string());
     }
     //--------------------------------------------------------------------------
     
@@ -200,19 +212,12 @@ bool BloomImageprocessing::Initialize(uintptr_t windowHandle, uintptr_t hInstanc
 
             if (ii == 1) // H
             {
-#if 0
-              m_weightTextures[ii] = LoadTextureFromBuffer(
-                  pVulkan, pHalfTexData, gBlurFilterSize * sizeof(float16),
-                  gBlurFilterSize, 1, 1, weightFormat,
-                  VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_FILTER_NEAREST,
-                  usageFlags, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-#endif
-              m_weightTextures[ii] = apiCast<Vulkan>( CreateTextureFromBuffer<Vulkan>( static_cast<GraphicsApiBase&>(*pVulkan),
+                m_weightTextures[ii] = CreateTextureFromBuffer( *pVulkan,
                                                                          pHalfTexData, gBlurFilterSize * sizeof( float16 ),
                                                                          gBlurFilterSize, 1, 1, weightFormat,
                                                                          SamplerAddressMode::ClampEdge,
                                                                          SamplerFilter::Nearest,
-                                                                         nullptr ) );
+                                                                         "weight texture");
 
                 weightViewInfo.filterCenter.x = gBlurFilterSize / 2;
                 weightViewInfo.filterCenter.y = 0;
@@ -221,20 +226,12 @@ bool BloomImageprocessing::Initialize(uintptr_t windowHandle, uintptr_t hInstanc
             }
             else // V
             {
-#if 0
-              m_weightTextures[ii] = LoadTextureFromBuffer(
-                  pVulkan, pHalfTexData, gBlurFilterSize * sizeof(float16), 1,
-                  gBlurFilterSize, 1, weightFormat,
-                  VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, VK_FILTER_NEAREST,
-                  usageFlags, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-#endif
-
-              m_weightTextures[ii] = apiCast<Vulkan>( CreateTextureFromBuffer<Vulkan>(
-                      static_cast<GraphicsApiBase&>(*pVulkan), pHalfTexData, gBlurFilterSize * sizeof(float16),
+                m_weightTextures[ii] = CreateTextureFromBuffer(
+                      *pVulkan, pHalfTexData, gBlurFilterSize * sizeof(float16),
                       1, gBlurFilterSize, 1, weightFormat,
                       SamplerAddressMode::ClampEdge,
                       SamplerFilter::Nearest,
-                  "nullptr" ) );
+                  "weight texture" );
 
                 weightViewInfo.filterCenter.x = 0;
                 weightViewInfo.filterCenter.y = gBlurFilterSize / 2;
@@ -242,8 +239,8 @@ bool BloomImageprocessing::Initialize(uintptr_t windowHandle, uintptr_t hInstanc
                 weightViewInfo.filterSize.height = gBlurFilterSize;
             }
 
-            viewInfo.image = m_weightTextures[ii]->GetVkImage();
-            viewInfo.format = TextureFormatToVk(m_weightTextures[ii]->Format);
+            viewInfo.image = m_weightTextures[ii].GetVkImage();
+            viewInfo.format = TextureFormatToVk(m_weightTextures[ii].Format);
 
             if (!CheckVkError("vkCreateImageView()", vkCreateImageView(pVulkan->m_VulkanDevice, &viewInfo, NULL, &m_weightTextureViews[ii])))
             {
@@ -293,6 +290,12 @@ bool BloomImageprocessing::Initialize(uintptr_t windowHandle, uintptr_t hInstanc
         }
         case ShaderPair_Display:
             break;
+        case ShaderPair_Count:
+            assert(false);
+            break;
+        default:
+            assert(false);
+            break;
         }
 
         if (pUboData != NULL)
@@ -306,65 +309,71 @@ bool BloomImageprocessing::Initialize(uintptr_t windowHandle, uintptr_t hInstanc
     delete[] pRawTexData;
     delete[] pHalfTexData;
 
-    //--------------------------------------------------------------------------
-    // Setup Passes
+    //each swapchain image gets its full complement of intermediate passes to avoid race conditions
+    for (uint32_t buf = 0; buf < pVulkan->m_SwapchainImageCount; ++buf)
     {
         for (uint32_t pp = 0; pp < Pass_Count; ++pp)
         {
-            m_passes[pp] = new PassInfo(pVulkan, &GlobalPassInfo[pp]);
+            m_passes[buf][pp] = new PassInfo(pVulkan, &GlobalPassInfo[pp]);
 
-            m_passes[pp]->pRt = &m_IntermediateRts[pp];
-            m_passes[pp]->pRc = &m_RenderContexts[pp];
-            m_passes[pp]->pUniform = NULL;
-            m_passes[pp]->renderArea.width = m_passes[pp]->pPassInfo->renderWidth;
-            m_passes[pp]->renderArea.height = m_passes[pp]->pPassInfo->renderHeight;
-            m_passes[pp]->weightViewIndex = -1;
-            m_passes[pp]->pShaderInfo = &m_shaders[m_passes[pp]->pPassInfo->shaderPairId];
+            m_passes[buf][pp]->pRt = &m_IntermediateRts[buf][pp];
+            m_passes[buf][pp]->pRc = &m_RenderContexts[buf][pp];
+            m_passes[buf][pp]->pUniform = NULL;
+            m_passes[buf][pp]->renderArea.width  = m_passes[buf][pp]->pPassInfo->renderWidth;
+            m_passes[buf][pp]->renderArea.height = m_passes[buf][pp]->pPassInfo->renderHeight;
+            m_passes[buf][pp]->weightViewIndex = -1;
+            m_passes[buf][pp]->pShaderInfo = &m_shaders[m_passes[buf][pp]->pPassInfo->shaderPairId];
 
-            switch (m_passes[pp]->pPassInfo->shaderPair)
+            switch (m_passes[buf][pp]->pPassInfo->shaderPair)
             {
             case ShaderPair_Downsample:
-                m_passes[pp]->vInputViews.push_back(m_sourceTexture->GetVkImageView());
+                m_passes[buf][pp]->vInputViews.push_back(m_sourceTexture->GetVkImageView());
                 break;
             case ShaderPair_Blur_Horizontal:
             {
-                m_passes[pp]->pUniform = &m_uniforms[pp];
-                m_passes[pp]->vInputViews.push_back(m_IntermediateRts[pp - 1].m_ColorAttachments[0].GetVkImageView());
-
+                m_passes[buf][pp]->pUniform = &m_uniforms[pp];
+                m_passes[buf][pp]->vInputViews.push_back(m_IntermediateRts[buf][pp - 1].m_ColorAttachments[0].GetVkImageView());
                 if (m_bUseExtension)
                 {
-                    m_passes[pp]->vInputViews.push_back(m_weightTextureViews[0]);
-                    m_passes[pp]->weightViewIndex = m_passes[pp]->vInputViews.size() - 1;
+                    m_passes[buf][pp]->vInputViews.push_back(m_weightTextureViews[0]);
+                    m_passes[buf][pp]->weightViewIndex = m_passes[buf][pp]->vInputViews.size() - 1;
                 }
                 break;
             }
             case ShaderPair_Blur_Vertical:
-                m_passes[pp]->pUniform = &m_uniforms[pp];
-                m_passes[pp]->vInputViews.push_back(m_IntermediateRts[pp - 1].m_ColorAttachments[0].GetVkImageView());
+                m_passes[buf][pp]->pUniform = &m_uniforms[pp];
+                m_passes[buf][pp]->vInputViews.push_back(m_IntermediateRts[buf][pp - 1].m_ColorAttachments[0].GetVkImageView());
                 if (m_bUseExtension)
                 {
-                    m_passes[pp]->vInputViews.push_back(m_weightTextureViews[1]);
-                    m_passes[pp]->weightViewIndex = m_passes[pp]->vInputViews.size() - 1;
+                    m_passes[buf][pp]->vInputViews.push_back(m_weightTextureViews[1]);
+                    m_passes[buf][pp]->weightViewIndex = m_passes[buf][pp]->vInputViews.size() - 1;
                 }
                 break;
             case ShaderPair_Display:
-                m_passes[pp]->pRt = NULL; // &m_IntermediateRts[Pass_Display];
-                // m_passes[pp]->pRc = NULL; // &m_RenderContexts[Pass_Display];
-                m_passes[pp]->renderArea.width = pVulkan->m_SurfaceWidth; // k_FullImageWidth;
-                m_passes[pp]->renderArea.height = pVulkan->m_SurfaceHeight; // k_FullImageHeight;
-                m_passes[pp]->vInputViews.push_back(m_sourceTexture->GetVkImageView());
-                m_passes[pp]->vInputViews.push_back((*m_passes[pp -1]->pRt).m_ColorAttachments[0].GetVkImageView());
+                m_passes[buf][pp]->pRt = NULL;
+
+                //Pass_Display has no intermediate render target, so m_RenderContexts[buf][pp] is default-constructed (empty).  Point pRc at the last
+                //initialized render context, so FinalizePass() passes CreatePipeline() a valid render context and the pipeline is successfully created
+                //TODO: this might be cleaned up, but such a cleanup might involve refactoring CreatePipeline()
+                m_passes[buf][pp]->pRc = &m_RenderContexts[buf][pp - 1];
+
+                m_passes[buf][pp]->renderArea.width = pVulkan->m_SurfaceWidth;
+                m_passes[buf][pp]->renderArea.height = pVulkan->m_SurfaceHeight;
+                m_passes[buf][pp]->vInputViews.push_back(m_sourceTexture->GetVkImageView());
+                m_passes[buf][pp]->vInputViews.push_back(m_IntermediateRts[buf][pp - 1].m_ColorAttachments[0].GetVkImageView());
+                break;
+            case ShaderPair_Count:
+                assert(false);
+                break;
+            default:
+                assert(false);
                 break;
             }
-        }
 
+            FinalizePass(m_passes[buf][pp]);
+        }
     }
     //--------------------------------------------------------------------------
-
-    for (uint32_t pp = 0; pp < Pass_Count; ++pp)
-    {
-        FinalizePass(m_passes[pp]);
-    }
 
     //--------------------------------------------------------------------------
     // Setup Command Buffers
@@ -381,13 +390,16 @@ bool BloomImageprocessing::Initialize(uintptr_t windowHandle, uintptr_t hInstanc
 void BloomImageprocessing::Destroy()
 //-----------------------------------------------------------------------------
 {
-    vkDeviceWaitIdle(GetVulkan()->m_VulkanDevice);
+    GetGfxApi()->WaitUntilIdle();
 
     // Textures
     for (uint32_t ii = 0; ii < NumWeightImages; ++ii)
     {
-        m_sourceTexture = nullptr;
         vkDestroyImageView(GetVulkan()->m_VulkanDevice, m_weightTextureViews[ii], NULL);
+    }
+    for (auto& t : m_weightTextures)
+    {
+        t.Release(GetVulkan());
     }
     m_sourceTexture = nullptr;
 
@@ -403,9 +415,17 @@ void BloomImageprocessing::Destroy()
         ReleaseUniformBuffer(GetVulkan(), &m_uniforms[ii]);
     }
 
-    for (uint32_t pp = 0; pp < Pass_Count; ++pp)
+    for (uint32_t buf = 0; buf < GetVulkan()->m_SwapchainImageCount; ++buf)
     {
-        delete m_passes[pp];
+        for (uint32_t pp = 0; pp < Pass_Count; ++pp)
+        {
+            delete m_passes[buf][pp];
+            m_passes[buf][pp] = nullptr;
+        }
+        for (uint32_t ii = 0; ii < kPassesThatNeedIntermediateRenderTargets_Count; ++ii)
+        {
+            m_IntermediateRts[buf][ii].Release();
+        }
     }
 
     ApplicationHelperBase::Destroy();
@@ -440,7 +460,7 @@ void BloomImageprocessing::FinalizePass(PassInfo* pPass)
         pPass->fbo = pPass->pRc->GetFramebuffer()->m_FrameBuffer;
     }
 
-    // Descriptor Set Layouyt
+    // Descriptor Set Layout
     VkDescriptorSetLayoutCreateInfo dsLayoutInfo = {};
     dsLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     dsLayoutInfo.pNext = NULL;
@@ -759,13 +779,20 @@ void BloomImageprocessing::BuildCmdBuffer(uint32_t idx)
             VkMemoryBarrier memBarrier = {};
             memBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
             memBarrier.pNext = NULL;
-            memBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-            memBarrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+            memBarrier.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;//src writes to color buffer
+            memBarrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;//dst reads from color buffer
 
-            vkCmdPipelineBarrier(pCmdBuf->m_VkCommandBuffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0x0, 1, &memBarrier, 0, NULL, 0, NULL);
+            vkCmdPipelineBarrier(
+                pCmdBuf->m_VkCommandBuffer,
+                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,  //src writes to color buffer
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,          //dst reads from color buffer
+                0x0,
+                1, &memBarrier,
+                0, NULL,
+                0, NULL);
         }
 
-        DrawPass(pCmdBuf, m_passes[pp], idx);
+        DrawPass(pCmdBuf, m_passes[idx][pp], idx);
     }
 
     pCmdBuf->End();

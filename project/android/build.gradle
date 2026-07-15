@@ -35,7 +35,6 @@ task clean(type: Delete) {
     delete rootProject.buildDir
 }
 
-/*
 task lintCheck() {
     getAllTasks(true).each {
         def lintTasks = it.value.findAll { it.name.contains("lint") }
@@ -45,6 +44,7 @@ task lintCheck() {
     }
 }
 
+/*
 afterEvaluate {
   Set<Task> result = tasks.findAll { task -> task.name.contains(':lint') }
   result.each { Task task ->

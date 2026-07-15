@@ -260,8 +260,8 @@ bool DrawableLoader<T_GFXAPI>::CreateDrawables( T_GFXAPI& gfxapi, std::vector<Me
                                                       rasterizationState,
                                                       materialPass->GetSpecializationConstants(),
                                                       pShaderPass->m_shaders,
-                                                      renderPasses[pass], 
-                                                      Msaa::Samples1 );
+                                                      renderPasses[pass],
+                                                      renderPasses[pass].msaa );
                 }
             }
             if (!pFirstPass)

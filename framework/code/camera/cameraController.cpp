@@ -22,6 +22,8 @@ CameraControllerBase::CameraControllerBase()
 , m_WorldUp(glm::vec3(0.0f, 1.0f, 0.0f))
 , m_MoveSpeed(1.0f)
 , m_RotateSpeed(cMouseRotSpeed)
+, m_ReverseVerticalRotateAxis(false)
+, m_ReverseHorizontalRotateAxis(false)
 {}
 
 //-----------------------------------------------------------------------------
@@ -166,8 +168,11 @@ void CameraController::Update(float frameTime, glm::vec3& position, glm::quat& r
         auto angleChange = mouseDiff * frameTime * m_RotateSpeed;
 
         m_LastMousePosition = m_CurrentMousePosition;
+
+        float horizonalRotation = m_ReverseHorizontalRotateAxis ? -1.0f : 1.0f;
+        float verticalRotation  = m_ReverseVerticalRotateAxis   ? -1.0f : 1.0f;
         // one (mouse) rotation axis is relative to the view direction, other is relative to world - prevents camera from 'twisting' although does introduce gimbal when looking along the UP axis and rotationg left/right.
-        rot = glm::angleAxis(angleChange.x, m_WorldUp) * rot * glm::angleAxis(-angleChange.y, cVecViewRight);
+        rot = glm::angleAxis(angleChange.x * horizonalRotation, m_WorldUp) * rot * glm::angleAxis(angleChange.y * verticalRotation, cVecViewRight);
         rot = glm::normalize(rot);
     }
 

@@ -1,12 +1,43 @@
-# Graph Pipelines
+# Graph Pipelines Sample
 
 ![Screenshot](img/screenshot.png)
 
-This sample demonstrates how to use the **VK_ARM_tensors**, **VK_ARM_data_graph**, and **VK_QCOM_data_graph_model** Vulkan extensions to run an ML‑powered image‑upscaling pipeline on supported hardware.
+This sample demonstrates the use of **Vulkan Graph Pipelines (Data Graph)** to execute a compute graph as a first‑class pipeline within a Vulkan application.
 
-The app renders the scene at a lower resolution, copies the result into tensor objects, dispatches a **Data Graph** pipeline (optionally backed by Qualcomm’s model‑import path), and writes the upscaled output back into an image for display. When these extensions are unavailable or disabled, the sample falls back to a standard GPU blit.
+The goal of the sample is to show how graph‑based workloads (such as ML inference) can be created, bound, and dispatched using Vulkan’s data‑graph pipeline model.
 
-The sample highlights how Vulkan applications can integrate tensor operations, graph pipelines, and Qualcomm™‑specific model execution paths to achieve real‑time upscaling performance on Adreno™ GPUs.
+Uses the *[VK_QCOM_data_graph_model](https://docs.vulkan.org/refpages/latest/refpages/source/VK_QCOM_data_graph_model.html)* and *[VK_ARM_data_graph](https://docs.vulkan.org/refpages/latest/refpages/source/VK_ARM_data_graph.html)* extensions.
+
+---
+
+## What This Sample Shows
+
+The sample focuses on the core mechanics required to run a data‑graph workload:
+
+- Creating a **data‑graph pipeline** using an identifier‑based creation path
+- Creating a **pipeline session** associated with the graph
+- Querying session memory requirements and explicitly allocating and binding device memory
+- Recording a graph dispatch inside a Vulkan command buffer
+- Submitting the dispatch to a Vulkan queue using standard synchronization primitives
+
+The code intentionally avoids higher‑level abstractions in order to clearly expose the Vulkan objects and flow involved.
+
+---
+
+## High‑Level Flow
+
+At a high level, the sample follows this sequence:
+
+1. Create a data‑graph pipeline (from a precompiled graph identifier or cache data)
+2. Create a pipeline session for runtime execution
+3. Query session bind requirements and allocate required memory
+4. Bind allocated memory to the session
+5. Record commands:
+   - Bind the graph pipeline and descriptor set
+   - Dispatch the graph
+6. Submit the command buffer to a queue
+
+This mirrors how graph execution would typically be integrated into a frame graph or task system.
 
 ## Running
 

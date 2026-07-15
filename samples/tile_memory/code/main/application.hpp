@@ -307,4 +307,5 @@ private:
     // Tile memory extension
     const TileMemoryHeapExtension* m_TileMemoryHeapExtension = nullptr;
     MemoryPool<Vulkan>             m_TileMemoryPool;
+    Texture<Vulkan>                m_AlbedoColorBufferCopy;
 };

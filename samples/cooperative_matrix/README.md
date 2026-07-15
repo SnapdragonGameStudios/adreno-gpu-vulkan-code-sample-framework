@@ -2,7 +2,7 @@
 
 ![Screenshot](img/screenshot.png)
 
-This sample demonstrates the use of the *VK_KHR_cooperative_matrix* extension in Vulkan to run matrix operations using GPU‑accelerated cooperative matrix arithmetic.
+This sample demonstrates the use of the *[VK_KHR_cooperative_matrix](https://docs.vulkan.org/refpages/latest/refpages/source/VK_KHR_cooperative_matrix.html)* extension in Vulkan to run matrix operations using GPU‑accelerated cooperative matrix arithmetic.
 
 The extension enables the application to query supported matrix tile sizes and data types, allocate the required buffers, and dispatch compute workloads that take advantage of hardware‑level cooperative matrix execution.
 

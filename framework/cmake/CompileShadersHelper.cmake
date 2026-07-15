@@ -70,6 +70,10 @@ endif()
 
 function(compile_glsl files targetenv dst_dir target_name)
     set(output_files "")
+    set(glsl_debug_flags "")
+    if(ARGC GREATER 4 AND ARGV4)
+        set(glsl_debug_flags "-gVS")
+    endif()
     foreach(file ${files})
         get_filename_component(output_filename ${file} NAME)
         set(output_shader "${dst_dir}/${output_filename}.spv")
@@ -80,7 +84,7 @@ function(compile_glsl files targetenv dst_dir target_name)
             MAIN_DEPENDENCY ${file}
             DEPFILE ${output_shader_dep}
             COMMAND ${CMAKE_COMMAND} -E make_directory ${dst_dir}
-            COMMAND ${GLSL_VALIDATOR} ${SHADER_INCLUDE} -I. -V ${file} -o ${output_filename}.spv --target-env ${targetenv} --quiet --depfile ${output_shader_dep}
+            COMMAND ${GLSL_VALIDATOR} ${SHADER_INCLUDE} -I. -V ${file} -o ${output_filename}.spv --target-env ${targetenv} --quiet ${glsl_debug_flags} --depfile ${output_shader_dep}
             COMMAND ${CMAKE_COMMAND} -E rename ${output_filename}.spv ${output_shader}
         )
         list(APPEND output_files ${output_shader})

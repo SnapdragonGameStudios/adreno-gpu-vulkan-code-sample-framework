@@ -89,6 +89,7 @@ public:
     const auto& GetMeshObject() const { return mMeshObject; }
     auto& GetMeshObject()                       { return mMeshObject; }
     const auto& GetInstances() const            { return mVertexInstanceBuffer; }
+    auto& GetInstances()                        { return mVertexInstanceBuffer; }
     const auto& GetDrawIndirectBuffer() const   { return mDrawIndirectBuffer; }
     const int GetNodeId() const                 { return mNodeId; }
 

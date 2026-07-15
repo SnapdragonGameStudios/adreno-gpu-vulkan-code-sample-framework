@@ -1,0 +1,94 @@
+{
+	"$schema": "../../../framework/schema/shaderSchema.json",
+	"Passes": [
+		{
+			"Name": "RP_SCENE",
+			"Shaders": {
+				"Vertex": "Media/Shaders/Scene.vert.spv",
+				"Fragment": "Media/Shaders/Scene.frag.spv"
+			},
+			"DescriptorSets": [
+				{
+					"Buffers": [
+						{
+							"Type": "UniformBuffer",
+							"Stages": [ "Vertex" ],
+							"Names": [ "Vert" ]
+						},
+						{
+							"Type": "UniformBuffer",
+							"Stages": [ "Fragment" ],
+							"Names": [ "Frag" ]
+						},
+						{
+							"Type": "UniformBuffer",
+							"Stages": [ "Fragment" ],
+							"Names": [ "Light" ]
+						},
+						{
+							"Type": "ImageSampler",
+							"Stages": [ "Fragment" ],
+							"Count": 1,
+							"Names": [ "Diffuse" ]
+						},
+						{
+							"Type": "ImageSampler",
+							"Stages": [ "Fragment" ],
+							"Count": 1,
+							"Names": [ "Normal" ]
+						}
+					]
+				}
+			],
+			"VertexBindings": [ "Position", "Attributes" ],
+			"FixedFunction": {
+				"CullBackFace": true,
+				"DepthTestEnable": true,
+				"DepthWriteEnable": true,
+				"DepthCompareOp": "LessEqual"
+			},
+			"Outputs": [
+				{ "BlendEnable": false }
+			]
+		}
+	],
+	"Vertex": [
+		{
+			"Span": 12,
+			"Name": "Position",
+			"Elements": [
+				{
+					"Name": "Position",
+					"Offset": 0,
+					"Type": "Vec3"
+				}
+			]
+		},
+		{
+			"Span": 48,
+			"Name": "Attributes",
+			"Elements": [
+				{
+					"Name": "Normal",
+					"Offset": 0,
+					"Type": "Vec3"
+				},
+				{
+					"Name": "UV",
+					"Offset": 12,
+					"Type": "Vec2"
+				},
+				{
+					"Name": "Color",
+					"Offset": 20,
+					"Type": "Vec4"
+				},
+				{
+					"Name": "Tangent",
+					"Offset": 36,
+					"Type": "Vec3"
+				}
+			]
+		}
+	]
+}

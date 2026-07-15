@@ -59,6 +59,7 @@ private:
         Pass_Display,
         Pass_Count,
     };
+    static const uint32_t kPassesThatNeedIntermediateRenderTargets_Count = Pass_Display;//last pass renders to swapchain image, requiring no intermediate render target
 
     struct float16
     {
@@ -167,14 +168,18 @@ private:
 
     static const uint32_t NumWeightImages = 2;
 
-    RenderTarget                      m_IntermediateRts[Pass_Count];
-    RenderContext                     m_RenderContexts[Pass_Count];
+    //intermediate render targets, render contexts, and passes per swapchain image; each in-flight frame needs its own set so concurrent GPU frames 
+    //do not read/write the same intermediate render targets simultaneously.
+    RenderTarget                      m_IntermediateRts[NUM_VULKAN_BUFFERS][Pass_Count];
+    RenderContext                     m_RenderContexts[NUM_VULKAN_BUFFERS][Pass_Count];
+    PassInfo*                         m_passes[NUM_VULKAN_BUFFERS][Pass_Count];
+    
+    //shared across all frames (initialized then read-only)
     Uniform                           m_uniforms[Pass_Count];
     ShaderInfo                        m_shaders[ShaderPair_Count];
-    std::unique_ptr<Texture<Vulkan>>  m_weightTextures[NumWeightImages];
+    Texture<Vulkan>                   m_weightTextures[NumWeightImages];
     VkImageView                       m_weightTextureViews[NumWeightImages];
     const Texture<Vulkan>*            m_sourceTexture = nullptr;
-    PassInfo*                         m_passes[Pass_Count];
     CommandBuffer                     m_commandBuffers[NUM_VULKAN_BUFFERS];
 
 

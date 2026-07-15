@@ -544,11 +544,12 @@ if(FRAMEWORK_ENABLE_VULKAN AND FRAMEWORK_framework_vulkan)
 
   target_link_libraries(framework_vulkan PUBLIC framework)
 
-  get_target_property(VulkanHeaders_INCLUDE_DIRS Vulkan::Headers INTERFACE_INCLUDE_DIRECTORIES)
-  target_include_directories(framework_vulkan PUBLIC "${VulkanHeaders_INCLUDE_DIRS}")
-
-  #set_target_properties(Vulkan::Vulkan          PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "")   # remove the Vulkan incude paths from the local VulkanSDK 
   target_include_directories(framework_vulkan   PUBLIC external/Vulkan-Headers/include)        # point the framework to the Vulkan includes that we have as a submodule
+  
+  #do not add the system Vulkan SDK headers, since we use the Vulkan-Headers submodule for consistency and don't want to shadow it
+  #get_target_property(VulkanHeaders_INCLUDE_DIRS Vulkan::Headers INTERFACE_INCLUDE_DIRECTORIES)
+  #target_include_directories(framework_vulkan PUBLIC "${VulkanHeaders_INCLUDE_DIRS}")
+  
   target_include_directories(framework_vulkan   PUBLIC external/volk)                          # point the framework to the volk includes that we have as a submodule
   target_include_directories(framework_vulkan   PUBLIC external/SPIRV-Cross/include)
   target_include_directories(framework_vulkan   PUBLIC external/glslang)
@@ -693,5 +694,3 @@ endif()
 # MSVC hierachy
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/schema"  PREFIX "schema" FILES ${JSON_SCHEMA})
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}"         PREFIX "natvis" FILES ${NATVIS_SCHEMA})
-
-

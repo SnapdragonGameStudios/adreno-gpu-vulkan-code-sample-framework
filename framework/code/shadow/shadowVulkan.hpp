@@ -21,7 +21,7 @@ public:
     ShadowT();
 
     bool Initialize(Vulkan& vulkan, uint32_t shadowMapWidth, uint32_t shadowMapHeight, bool addColorTarget);
-    void Release();
+    void Release(Vulkan& vulkan);
 
     const auto& GetViewport() const
     {

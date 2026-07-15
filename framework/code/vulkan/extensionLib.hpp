@@ -284,6 +284,72 @@ namespace ExtensionLib
 
 #endif // VK_KHR_cooperative_matrix
 
+#if VK_QCOM_cooperative_matrix_conversion
+
+    struct Ext_VK_QCOM_cooperative_matrix_conversion : public VulkanFeaturesPropertiesAndFunctionPointerExtensionHelper<
+        VkPhysicalDeviceCooperativeMatrixConversionFeaturesQCOM, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_CONVERSION_FEATURES_QCOM,
+        VkPhysicalDeviceCooperativeMatrixConversionPropertiesQCOM, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_CONVERSION_PROPERTIES_QCOM>
+    {
+        static constexpr auto Name = VK_QCOM_COOPERATIVE_MATRIX_CONVERSION_EXTENSION_NAME;
+        explicit Ext_VK_QCOM_cooperative_matrix_conversion(VulkanExtensionStatus status = VulkanExtensionStatus::eRequired) : VulkanFeaturesPropertiesAndFunctionPointerExtensionHelper(Name, status)
+        {
+        }
+
+        void PopulateRequestedFeatures() override
+        {
+            RequestedFeatures.sType = AvailableFeatures.sType;
+            RequestedFeatures.cooperativeMatrixConversion = AvailableFeatures.cooperativeMatrixConversion;
+        }
+        void LookupFunctionPointers(VkInstance) override {}
+        void LookupFunctionPointers(VkDevice, PFN_vkGetDeviceProcAddr) override {}
+        void PrintFeatures() const override;
+        void PrintProperties() const override;
+    };
+
+#endif // VK_QCOM_cooperative_matrix_conversion
+
+#if VK_KHR_vulkan_memory_model
+
+    struct Ext_VK_KHR_vulkan_memory_model : public VulkanFeaturesAndFunctionPointerExtensionHelper<
+        VkPhysicalDeviceVulkanMemoryModelFeaturesKHR, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_MEMORY_MODEL_FEATURES>
+    {
+        using tBase = VulkanFeaturesAndFunctionPointerExtensionHelper;
+        static constexpr auto Name = VK_KHR_VULKAN_MEMORY_MODEL_EXTENSION_NAME;
+        explicit Ext_VK_KHR_vulkan_memory_model( VulkanExtensionStatus status = VulkanExtensionStatus::eRequired ) : tBase( Name, status ) {}
+        void PopulateRequestedFeatures() override
+        {
+            RequestedFeatures.sType = AvailableFeatures.sType;
+            RequestedFeatures.vulkanMemoryModel = AvailableFeatures.vulkanMemoryModel;
+            RequestedFeatures.vulkanMemoryModelDeviceScope = AvailableFeatures.vulkanMemoryModelDeviceScope;
+            RequestedFeatures.vulkanMemoryModelAvailabilityVisibilityChains = AvailableFeatures.vulkanMemoryModelAvailabilityVisibilityChains;
+        }
+        void LookupFunctionPointers( VkInstance ) override {}
+        void LookupFunctionPointers( VkDevice, PFN_vkGetDeviceProcAddr ) override {}
+        void PrintFeatures() const override;
+    };
+
+#endif // VK_KHR_vulkan_memory_model
+
+#if VK_KHR_maintenance4
+
+    struct Ext_VK_KHR_maintenance4 : public VulkanFeaturesAndFunctionPointerExtensionHelper<
+        VkPhysicalDeviceMaintenance4FeaturesKHR, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_FEATURES>
+    {
+        using tBase = VulkanFeaturesAndFunctionPointerExtensionHelper;
+        static constexpr auto Name = VK_KHR_MAINTENANCE_4_EXTENSION_NAME;
+        explicit Ext_VK_KHR_maintenance4( VulkanExtensionStatus status = VulkanExtensionStatus::eRequired ) : tBase( Name, status ) {}
+        void PopulateRequestedFeatures() override
+        {
+            RequestedFeatures.sType = AvailableFeatures.sType;
+            RequestedFeatures.maintenance4 = AvailableFeatures.maintenance4;
+        }
+        void LookupFunctionPointers( VkInstance ) override {}
+        void LookupFunctionPointers( VkDevice, PFN_vkGetDeviceProcAddr ) override {}
+        void PrintFeatures() const override;
+    };
+
+#endif // VK_KHR_maintenance4
+
 #if VK_KHR_depth_stencil_resolve
 
     struct Ext_VK_KHR_depth_stencil_resolve : public VulkanFunctionPointerExtensionHelper<VulkanExtensionType::eDevice>

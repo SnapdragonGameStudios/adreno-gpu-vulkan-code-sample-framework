@@ -33,7 +33,7 @@ bool ShadowT<Vulkan>::Initialize(Vulkan& rGfxApi, uint32_t shadowMapWidth, uint3
     TextureFormat colorFormat = TextureFormat::R8G8B8A8_UNORM;
     TextureFormat depthFormat = TextureFormat::D32_SFLOAT;
 
-    m_ShadowDepthBuffer = CreateTextureObject( rGfxApi, shadowMapWidth, shadowMapHeight, depthFormat, TEXTURE_TYPE::TT_RENDER_TARGET, "Shadow Depth", Msaa::Samples1 );
+    m_ShadowDepthBuffer = CreateTextureObject( rGfxApi, shadowMapWidth, shadowMapHeight, depthFormat, TEXTURE_TYPE::TT_DEPTH_TARGET, "Shadow Depth", Msaa::Samples1 );
 
     std::span<TextureVulkan> colorBufferSpan{};
     std::span<TextureFormat> colorFormatSpan{};
@@ -64,6 +64,8 @@ bool ShadowT<Vulkan>::Initialize(Vulkan& rGfxApi, uint32_t shadowMapWidth, uint3
     return true;
 }
 
-void ShadowT<Vulkan>::Release()
+void ShadowT<Vulkan>::Release(Vulkan& vulkan)
 {
+    m_ShadowColorBuffer.Release(&vulkan);
+    m_ShadowDepthBuffer.Release(&vulkan);
 }

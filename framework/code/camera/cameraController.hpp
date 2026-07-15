@@ -32,6 +32,8 @@ public:
     void    SetMoveSpeed(float speed);
     /// Set rotation speed (units per second)
     void    SetRotateSpeed(float speed);
+    /// Set reverse rotation axis (boolean)
+    void    SetReverseRotation(bool reverseVertical, bool reverseHorizontal);
     /// Set world up vector (assumed normalized).  Tested with y-up and z-up
     void    SetWorldUp(glm::vec3 up);
 
@@ -61,6 +63,8 @@ protected:
     glm::vec3       m_WorldUp;
     float           m_MoveSpeed;
     float           m_RotateSpeed;
+    bool            m_ReverseVerticalRotateAxis;
+    bool            m_ReverseHorizontalRotateAxis;
 };
 
 

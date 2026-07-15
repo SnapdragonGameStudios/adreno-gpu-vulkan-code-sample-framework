@@ -312,17 +312,21 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
     // Check for a media directy (fatal to not have one).
     constexpr auto mediaPath = "build/Media";
+    bool mediaExists = true;
     if (!std::filesystem::exists(mediaPath) || !std::filesystem::is_directory(mediaPath))
     {
         std::string errorMessage = "Cannot find 'build/Media' folder.\n  You're likely not running from the correct directory or are missing files from the Media folder (check this sample's README.md for instructions).\n";
-        LOGE(errorMessage.c_str());
+        LOGW(errorMessage.c_str());
         SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
 
         if (allocatedNewConsoleWindow && !IsDebuggerPresent())
         {
             MessageBox(nullptr, errorMessage.c_str(), "Vulkan Framework", MB_OK);
         }
-        return FALSE;
+
+        // Shouldn't exit if the media folder isn't found right away since the sample may not need it (sdp_cli)
+        mediaExists = false;
+        //return FALSE;
     }
 
     if (!allocatedNewConsoleWindow)
@@ -350,6 +354,16 @@ int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLi
 
     // Create the application
     gpApplication = Application_ConstructApplication();
+
+    // Check if we need the media folder
+    ApplicationConfig appConfig {};
+    gpApplication->PreInitializeSetApplicationConfiguration(appConfig);
+
+    if (appConfig.assetFolderRequirement == ApplicationConfig::Requirement::Required && !mediaExists)
+    {
+        LOGE("This sample requires the 'build/Media' folder - it cannot run without it.\n  To fix: run the executable from the project root, or generate the assets (see README.md).\n  If this sample does not need media, set assetFolderRequirement = Requirement::Optional in PreInitializeSetApplicationConfiguration.\n");
+        return false;
+    }
 
     // Do a very simple parse of the cmd line...
     std::string sConfigFilenameOverride;

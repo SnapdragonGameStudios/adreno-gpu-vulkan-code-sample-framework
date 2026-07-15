@@ -236,11 +236,10 @@ bool CommandList<Vulkan>::Begin(const VkCommandBufferInheritanceRenderingInfo& D
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO,
         .pNext = &DynamicRenderingInheritanceInfo
     };
-    VkCommandBufferInheritanceRenderPassTransformInfoQCOM InheritanceInfoRenderPassTransform = {};
 
     VkCommandBufferBeginInfo CmdBeginInfo{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .flags = CmdBuffUsage,
+        .flags = CmdBuffUsage | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT,
         .pInheritanceInfo = &InheritanceInfo,
     };
 
@@ -264,7 +263,7 @@ bool CommandList<Vulkan>::Begin(const RenderContext<Vulkan>& renderContext, VkCo
         // dynamic rendering
         const auto& dynamicRenderContext = std::get<RenderContext<Vulkan>::DynamicRenderContextData>( renderContext.v );
         VkCommandBufferInheritanceRenderingInfo dynamicRenderingInheritanceInfo{
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO,
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_RENDERING_INFO,
             .flags = VK_RENDERING_CONTENTS_SECONDARY_COMMAND_BUFFERS_BIT,
             .colorAttachmentCount = (uint32_t)dynamicRenderContext.colorAttachmentFormats.size(),
             .pColorAttachmentFormats = dynamicRenderContext.colorAttachmentFormats.data(),
@@ -445,37 +444,18 @@ bool CommandList<Vulkan>::BeginRenderPass( const VkRenderPassBeginInfo& RPBeginI
 void CommandList<Vulkan>::BeginRenderPass( const VkRenderingInfo& renderingInfo )
 //-----------------------------------------------------------------------------
 {
-    /*
-    const RenderTarget<Vulkan>& renderTarget;
-    std::array<VkRenderingAttachmentInfo, 8> colorAttachments;
-    VkRenderingAttachmentInfo depthAttachment;
-
-    for (auto i = 0; i < renderTarget.GetNumColorLayers(); ++i)
-    {
-        auto& image = renderTarget.m_ColorAttachments[i];
-        colorAttachments[i] = {
-            .imageView = image.GetVkImageView(),
-            .imageLayout = image.GetVkImageLayout(),
-            .resolveMode = VK_RESOLVE_MODE_NONE,
-            .loadOp = 
-            .clearValue = renderTarget.m_ClearColorValues[i],
-        }
-    }
-
-    VkRenderingInfo renderingInfo{
-        .sType = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR,
-        .renderArea = {0, 0, renderTarget.m_Width, renderTarget.m_Height},
-        .layerCount = 1,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = colorAttachments.data(),
-        .pDepthAttachment = renderTarget.m_DepthAttachment ? &depthAttachment : nullptr,
-        .pStencilAttachment = VK_NULL_HANDLE,
-    };
-    */
-
-
     auto* dynamicRenderingExt = m_pVulkan->GetExtension<ExtensionLib::Ext_VK_KHR_dynamic_rendering>();
+    assert((dynamicRenderingExt != nullptr) && "dynamic rendering overload of BeginRenderPass(...) called without dynamic rendering extension available/enabled");
     dynamicRenderingExt->m_vkCmdBeginRenderingKHR( m_VkCommandBuffer, &renderingInfo );
+}
+
+//-----------------------------------------------------------------------------
+void CommandList<Vulkan>::EndRendering()
+//-----------------------------------------------------------------------------
+{
+    auto* dynamicRenderingExt = m_pVulkan->GetExtension<ExtensionLib::Ext_VK_KHR_dynamic_rendering>();
+    assert((dynamicRenderingExt != nullptr) && "dynamic rendering function EndRendering() called without dynamic rendering extension available/enabled");
+    dynamicRenderingExt->m_vkCmdEndRenderingKHR( m_VkCommandBuffer );
 }
 
 //-----------------------------------------------------------------------------

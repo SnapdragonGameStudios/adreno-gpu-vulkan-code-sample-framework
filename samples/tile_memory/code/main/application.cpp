@@ -46,23 +46,23 @@
 * Reference points:
 *
 * 1. PreInitializeSetVulkanConfiguration
-*    - Sets up the Vulkan configuration, including required and optional extensions.
-*    - config.OptionalExtension<ExtensionLib::Ext_VK_QCOM_tile_memory_heap>();
-*    - The application checks for the VK_QCOM_tile_memory_heap extension and sets up the Vulkan configuration accordingly.
-*    - Memory objects are created, including setting up the tile memory heap if supported.
+*Â Â Â  - Sets up the Vulkan configuration, including required and optional extensions.
+*Â Â Â  - config.OptionalExtension<ExtensionLib::Ext_VK_QCOM_tile_memory_heap>();
+*Â Â Â  - The application checks for the VK_QCOM_tile_memory_heap extension and sets up the Vulkan configuration accordingly.
+*Â Â Â  - Memory objects are created, including setting up the tile memory heap if supported.
 * 
 * 2. CreateMemoryObjects
-*    - Creates memory objects, including tile memory if supported.
+*Â Â Â  - Creates memory objects, including tile memory if supported.
 * 
 * 3. CreateRenderTargets
 *    - Render targets are created with the option to use tile memory. This involves setting the appropriate usage flags and binding the memory.
 * 
 * 4. Render
-*    - The main rendering function binds the tile memory heap to the command buffer if tile memory is enabled.
-*    - The rendering process includes multiple passes:
-*      - GBuffer Pass: Outputs albedo, normal, and depth.
-*      - Clustering Pass: Divides point lights into clusters and performs light culling.
-*      - Lighting Pass: Applies the corresponding pixel light cluster to a screen quad.
+*Â Â Â  - The main rendering function binds the tile memory heap to the command buffer if tile memory is enabled.
+*Â Â Â  - The rendering process includes multiple passes:
+*Â Â Â Â Â  - GBuffer Pass: Outputs albedo, normal, and depth.
+*Â Â Â Â Â  - Clustering Pass: Divides point lights into clusters and performs light culling.
+*Â Â Â Â   - Lighting Pass: Applies the corresponding pixel light cluster to a screen quad.
 *
 * SPEC: https://registry.khronos.org/vulkan/specs/latest/man/html/VK_QCOM_tile_memory_heap.html
 ============================================================================================================
@@ -279,6 +279,8 @@ void Application::Destroy()
     // Semaphores
     vkDestroySemaphore(pVulkan->m_VulkanDevice, m_Semaphore, nullptr);
 
+    m_AlbedoColorBufferCopy.Release(pVulkan);
+
     // Drawables
     m_SceneDrawables.clear();
     m_BlitQuadDrawable.reset();
@@ -392,6 +394,31 @@ bool Application::LoadShaders()
     return true;
 }
 
+static Texture<Vulkan> TileMemoryAllocateTry(
+    Vulkan&              		vulkan,
+    CreateTexObjectInfo&        createInfo,
+    MemoryPool<Vulkan>*const    tileMemoryPoolPtr,
+    const std::string&         	textureName)
+{
+    assert(tileMemoryPoolPtr);
+    
+    const auto tileMemoryTextureName = textureName + " TILEMEM";
+    createInfo.pName = tileMemoryTextureName.c_str();
+
+    auto newTexture = CreateTextureObject(vulkan, createInfo, tileMemoryPoolPtr);
+    if (!newTexture.IsEmpty())
+    {
+        LOGI("%s was allocated in tile memory", createInfo.pName);
+    }
+    return newTexture;
+}
+
+static TEXTURE_TYPE TextureTypeGet(const std::string& textureName, const TEXTURE_TYPE textureTypeDefault)
+{
+    return textureName == "BLIT" ? TEXTURE_TYPE::TT_RENDER_TARGET_TRANSFERSRC : textureTypeDefault;
+}
+
+
 //-----------------------------------------------------------------------------
 bool Application::CreateRenderTargets()
 //-----------------------------------------------------------------------------
@@ -415,24 +442,25 @@ bool Application::CreateRenderTargets()
     {
         auto textureName = std::string(name);
 
-        for (const auto& colorFormat : colorFormats)
+        for (size_t colorFormatIndex=0; colorFormatIndex < colorFormats.size(); ++colorFormatIndex)
         {
+            const auto& colorFormat = colorFormats[colorFormatIndex];
+            auto textureNameColor = textureName + std::string(" RENDER_TARGET_") + std::to_string(colorFormatIndex);
             CreateTexObjectInfo createInfo{
                 .uiWidth = width,
                 .uiHeight = height,
                 .Format = colorFormat,
-                .TexType = textureName == "BLIT" ? TEXTURE_TYPE::TT_RENDER_TARGET_TRANSFERSRC : TEXTURE_TYPE::TT_RENDER_TARGET,
-                .pName = textureName.c_str(),
+                .TexType = TextureTypeGet(textureName, TEXTURE_TYPE::TT_RENDER_TARGET),
+                .pName = textureNameColor.c_str(),
             };
             renderTargetGroup.color.push_back(CreateTextureObject(*pVulkan, createInfo));
 
             if (tileMemory && m_TileMemoryPool)
             {
-                textureName.append(" TILEMEM");
-                createInfo.pName = textureName.c_str();
-                if (auto newTexture = CreateTextureObject(*pVulkan, createInfo, &m_TileMemoryPool); !newTexture.IsEmpty())
+                auto tileTexture = TileMemoryAllocateTry(*pVulkan, createInfo, &m_TileMemoryPool, textureNameColor);
+                if (!tileTexture.IsEmpty())
                 {
-                    renderTargetGroup.colorTileMemory.push_back(std::move(newTexture));
+                    renderTargetGroup.colorTileMemory.push_back(std::move(tileTexture));
                     continue;
                 }
             }
@@ -442,23 +470,22 @@ bool Application::CreateRenderTargets()
 
         if (depthFormat)
         {
+            auto textureNameDepth = textureName + std::string(" DEPTH");
             CreateTexObjectInfo createInfo{
                 .uiWidth = width,
                 .uiHeight = height,
                 .Format = depthFormat.value(),
-                .TexType = textureName == "BLIT" ? TEXTURE_TYPE::TT_RENDER_TARGET_TRANSFERSRC : TEXTURE_TYPE::TT_DEPTH_TARGET,
-                .pName = textureName.c_str(),
+                .TexType = TextureTypeGet(textureName, TEXTURE_TYPE::TT_DEPTH_TARGET),
+                .pName = textureNameDepth.c_str(),
             };
             renderTargetGroup.depth = CreateTextureObject(*pVulkan, createInfo);
 
             if (tileMemory && m_TileMemoryPool)
             {
-                textureName.append(" TILEMEM");
-                createInfo.pName = textureName.c_str();
-
-                if (auto newTexture = CreateTextureObject(*pVulkan, createInfo, &m_TileMemoryPool); !newTexture.IsEmpty())
+				auto tileTexture = TileMemoryAllocateTry(*pVulkan, createInfo, &m_TileMemoryPool, textureNameDepth);
+                if (!tileTexture.IsEmpty())
                 {
-                    renderTargetGroup.depthTileMemory = std::move(newTexture);
+                    renderTargetGroup.depthTileMemory = std::move(tileTexture);
                     return;
                 }
             }
@@ -471,6 +498,17 @@ bool Application::CreateRenderTargets()
     CreateRenderTarget(m_RenderTargets[RP_DEFERRED_LIGHT], "DEFERRED LIGHT", false, gRenderWidth, gRenderHeight, DeferredLightColorType);
     CreateRenderTarget(m_RenderTargets[RP_HUD], "HUD", false, gSurfaceWidth, gSurfaceHeight, HudColorType);
     CreateRenderTarget(m_RenderTargets[RP_BLIT], "BLIT", false, gSurfaceWidth, gSurfaceHeight, FinalColorType);
+
+    {
+        CreateTexObjectInfo createInfo{
+            .uiWidth  = gRenderWidth,
+            .uiHeight = gRenderHeight,
+            .Format   = SceneColorType[0],
+            .TexType  = TEXTURE_TYPE::TT_SAMPLED_TRANSFERDST,
+            .pName    = "AlbedoColorBufferCopy",
+        };
+        m_AlbedoColorBufferCopy = CreateTextureObject(*pVulkan, createInfo);
+    }
 
     return true;
 }
@@ -1312,16 +1350,21 @@ void Application::Render(float fltDiffTime)
     }, 
     [&](uint32_t whichBuffer, CommandListVulkan& commandList)
     {
+        const auto& albedoColorTexture = m_RenderTargetUsesTileMemory
+            ? m_RenderTargets[RP_SCENE].colorTileMemory[0]
+            : m_RenderTargets[RP_SCENE].color[0];
+
+        // Transition image to TRANSFER_SRC -- even when image resides in tile memory
         SimpleImageBarrier(
-            commandList, 
-            m_RenderTargetUsesTileMemory ? m_RenderTargets[RP_SCENE].colorTileMemory[0].GetVkImage() : m_RenderTargets[RP_SCENE].color[0].GetVkImage(),
+            commandList,
+            albedoColorTexture.GetVkImage(),
             VK_IMAGE_ASPECT_COLOR_BIT,
             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
             VK_ACCESS_MEMORY_WRITE_BIT,
             VK_ACCESS_MEMORY_READ_BIT,
             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
         SimpleImageBarrier(
             commandList, 
             m_RenderTargetUsesTileMemory ? m_RenderTargets[RP_SCENE].colorTileMemory[1].GetVkImage() : m_RenderTargets[RP_SCENE].color[1].GetVkImage(),
@@ -1332,6 +1375,60 @@ void Application::Render(float fltDiffTime)
             VK_ACCESS_MEMORY_READ_BIT,
             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+        SimpleImageBarrier(
+            commandList,
+            m_AlbedoColorBufferCopy.GetVkImage(),
+            VK_IMAGE_ASPECT_COLOR_BIT,
+            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            0,
+            VK_ACCESS_MEMORY_WRITE_BIT,
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+        {
+            VkImageCopy copyRegion{};
+            copyRegion.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+            copyRegion.srcOffset      = { 0, 0, 0 };
+            copyRegion.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+            copyRegion.dstOffset      = { 0, 0, 0 };
+            copyRegion.extent         = { albedoColorTexture.Width, albedoColorTexture.Height, 1 };
+
+            vkCmdCopyImage(
+                commandList.m_VkCommandBuffer,
+                albedoColorTexture.GetVkImage(),
+                VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                m_AlbedoColorBufferCopy.GetVkImage(),
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                1,
+                &copyRegion);
+        }
+
+        // Transition albedo buffer back to SHADER_READ_ONLY so the deferred light pass can sample it
+        SimpleImageBarrier(
+            commandList,
+            albedoColorTexture.GetVkImage(),
+            VK_IMAGE_ASPECT_COLOR_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            VK_ACCESS_MEMORY_READ_BIT,
+            VK_ACCESS_MEMORY_READ_BIT,
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+        // Transition m_AlbedoColorBufferCopy so it can be sampled by a future decal rendering pass (unimplemented)
+        SimpleImageBarrier(
+            commandList,
+            m_AlbedoColorBufferCopy.GetVkImage(),
+            VK_IMAGE_ASPECT_COLOR_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            VK_ACCESS_MEMORY_WRITE_BIT,
+            VK_ACCESS_MEMORY_READ_BIT,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
         SimpleImageBarrier(
             commandList,
             m_RenderTargetUsesTileMemory ? m_RenderTargets[RP_SCENE].depthTileMemory.GetVkImage() : m_RenderTargets[RP_SCENE].depth.GetVkImage(),
@@ -1341,7 +1438,7 @@ void Application::Render(float fltDiffTime)
             VK_ACCESS_MEMORY_WRITE_BIT,
             VK_ACCESS_MEMORY_READ_BIT,
             VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-            VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL); // VK_IMAGE_LAYOUT_GENERAL);
+            VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL);
     });
     
     ///////////////////////////////////////////////////////////////////////////////////////
@@ -1383,7 +1480,6 @@ void Application::Render(float fltDiffTime)
                 commandList,
                 computablePass,
                 whichBuffer);
-            VkPipelineStageFlags2;
         }
     }, 
     [&](uint32_t whichBuffer, CommandListVulkan& commandList)
@@ -1514,7 +1610,7 @@ void Application::Render(float fltDiffTime)
             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
             VK_PIPELINE_STAGE_TRANSFER_BIT,
             VK_ACCESS_MEMORY_WRITE_BIT,
-            VK_ACCESS_TRANSFER_READ_BIT,
+            VK_ACCESS_MEMORY_READ_BIT,
             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
     });
@@ -1615,7 +1711,7 @@ void Application::Render(float fltDiffTime)
                 VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                 VK_PIPELINE_STAGE_TRANSFER_BIT,
                 VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT,
-                VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_ACCESS_MEMORY_WRITE_BIT,
                 VK_IMAGE_LAYOUT_UNDEFINED,
                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
         }
@@ -1660,7 +1756,7 @@ void Application::Render(float fltDiffTime)
                 VK_IMAGE_ASPECT_COLOR_BIT,
                 VK_PIPELINE_STAGE_TRANSFER_BIT,
                 VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_ACCESS_MEMORY_WRITE_BIT,
                 VK_ACCESS_MEMORY_READ_BIT,
                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                 VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);

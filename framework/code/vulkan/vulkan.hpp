@@ -113,6 +113,7 @@ struct SwapchainBuffers
     VkImageView                             view        = VK_NULL_HANDLE;
     VkFence                                 fence       = VK_NULL_HANDLE;
     VkSemaphore                             semaphore   = VK_NULL_HANDLE;
+    VkSemaphore                             renderCompleteSemaphore = VK_NULL_HANDLE;
 };
 
 /// DepthBuffer memory, image and view
@@ -471,6 +472,7 @@ public:
 
     const Framebuffer<Vulkan>& GetSwapchainFramebuffer(uint32_t index) const { return m_SwapchainBuffers[index].framebuffer; }
     VkImage GetSwapchainImage(uint32_t index) const { return m_SwapchainBuffers[index].image; }
+    VkImageView GetSwapchainImageView(uint32_t index) const { return m_SwapchainBuffers[index].view; }
     TextureFormat GetSurfaceFormat() const { return m_SurfaceFormat; }
 
     TextureFormat GetSwapchainFormat() const { return m_SurfaceFormat; }
@@ -488,6 +490,8 @@ public:
         const VkFence       fence;
         /// Backbuffer semaphore (start of rendering pipeline needs to wait for this)
         const VkSemaphore   semaphore;
+        /// Render complete semaphore (presentation waits for this, indexed by acquired swapchain image)
+        const VkSemaphore   renderCompleteSemaphore;
     };
 
     /// Get the next image to render to and the fence to signal at the end, then queue a wait until the image is ready
@@ -896,7 +900,21 @@ public:
         const T* AddExtension(TT ...args) {
             auto pExtension = std::make_unique<T>( std::forward<TT>(args)... );
             auto insertIt = m_Extensions.try_emplace( pExtension->Name, std::move( pExtension ) );
-            assert( insertIt.second == true );//check we didnt already register this extension which may be problematic if registered once as a 'basic' VulkanExtension and once as a derived class.
+            if (!insertIt.second)
+            {
+                auto* existingExtension = dynamic_cast<T*>(insertIt.first->second.get());
+                assert(existingExtension != nullptr);//check we didnt register once as a 'basic' VulkanExtension and once as a derived class.
+                if (existingExtension)
+                {
+                    const T* requestedExtension = static_cast<T*>(pExtension.get());
+                    if (requestedExtension->Status > existingExtension->Status)
+                        existingExtension->Status = requestedExtension->Status;
+                    existingExtension->Version = std::max(existingExtension->Version, requestedExtension->Version);
+                    if (requestedExtension->LoadMode != VulkanExtensionLoadMode::eDefault)
+                        existingExtension->LoadMode = requestedExtension->LoadMode;
+                    return existingExtension;
+                }
+            }
             return static_cast<T*>(insertIt.first->second.get());
         }
 

@@ -125,6 +125,13 @@ bool FrameworkApplicationBase::LoadConfigFile()
 }
 
 //-----------------------------------------------------------------------------
+void FrameworkApplicationBase::PreInitializeSetApplicationConfiguration(ApplicationConfig&)
+//-----------------------------------------------------------------------------
+{
+    return;
+}
+
+//-----------------------------------------------------------------------------
 bool FrameworkApplicationBase::Initialize(uintptr_t windowHandle, uintptr_t instanceHandle)
 //-----------------------------------------------------------------------------
 {

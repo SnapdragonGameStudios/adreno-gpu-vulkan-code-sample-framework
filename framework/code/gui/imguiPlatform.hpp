@@ -23,8 +23,7 @@ class GuiImguiPlatform : public GuiImguiBase
 public:
     GuiImguiPlatform();
     ~GuiImguiPlatform();
-    virtual bool Initialize(uintptr_t windowHandle, TextureFormat renderFormat, uint32_t renderWidth, uint32_t renderHeight) override = 0;
-    bool Initialize(uintptr_t windowHandle, TextureFormat renderFormat, uint32_t deviceWidth, uint32_t deviceHeight, uint32_t renderWidth, uint32_t renderHeight);
+    virtual bool Initialize(uintptr_t windowHandle, TextureFormat renderFormat, uint32_t deviceWidth, uint32_t deviceHeight, uint32_t renderWidth, uint32_t renderHeight);
     void Update() override;
 
     bool TouchDownEvent(int iPointerID, float xPos, float yPos) override;

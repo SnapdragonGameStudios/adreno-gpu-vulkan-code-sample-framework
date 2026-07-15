@@ -51,6 +51,19 @@ EXTERN_VAR(char*,    gHLMDumpFile);
 // Texture Locations
 #define SHADER_BASE_TEXTURE_LOC             2
 
+class ApplicationConfig
+{
+public:
+    enum class Requirement
+    {
+        Optional = 0,
+        Required,
+        NotUsed,
+    };
+
+    Requirement assetFolderRequirement = Requirement::Required;
+    Requirement configFileRequirement =  Requirement::Optional;
+};
 
 //#########################################################
 // Config options - End
@@ -75,6 +88,10 @@ public:
 
     /// Override the (default) filename used by LoadConfigFile
     virtual void    SetConfigFilename(const std::string& filename);
+
+    /// May be called before initialize (from main(), before window creation).
+    /// @param configuration (if untouched, Application will be setup using defaults).
+    virtual void    PreInitializeSetApplicationConfiguration(ApplicationConfig&);
 
     /// Load config file before Initialize()
     /// This will go to derived class that can then set global parameters

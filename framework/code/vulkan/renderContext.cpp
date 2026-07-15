@@ -338,6 +338,40 @@ size_t  RenderContext<Vulkan>::GetNumColorAttachmentFormats() const
 }
 
 //-----------------------------------------------------------------------------
+RenderContext<Vulkan> RenderContext<Vulkan>::Copy() const
+//-----------------------------------------------------------------------------
+{
+    RenderContext<Vulkan> result;
+    result.viewMask = viewMask;
+    result.subPass  = subPass;
+    result.msaa     = msaa;
+    result.name     = name;
+
+    if (IsDynamic())
+    {
+        const auto& context = std::get<DynamicRenderContextData>(v);
+        result.v = DynamicRenderContextData{
+            context.colorAttachmentFormats,
+            context.depthAttachmentFormat,
+            context.stencilAttachmentFormat
+        };
+    }
+    else if (std::holds_alternative<RenderPassContextData>(v))
+    {
+        const auto& context = std::get<RenderPassContextData>(v);
+        result.v = RenderPassContextData{
+            context.renderPass.Copy(),
+            context.overridePipeline.Copy(),
+            context.framebuffer,                // Framebuffer<Vulkan> has a copy constructor
+            context.renderPassClearData.Copy()
+        };
+    }
+    // else: monostate — result.v stays as monostate (empty context)
+
+    return result;
+}
+
+//-----------------------------------------------------------------------------
 fvk::VkPipelineRenderingCreateInfo RenderContext<Vulkan>::GetPipelineRenderingCreateInfo() const
 //-----------------------------------------------------------------------------
 {
@@ -352,4 +386,3 @@ fvk::VkPipelineRenderingCreateInfo RenderContext<Vulkan>::GetPipelineRenderingCr
 
     return info;
 }
-

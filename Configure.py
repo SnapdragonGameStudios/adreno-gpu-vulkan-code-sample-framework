@@ -358,9 +358,11 @@ def download(groups):
                     for b in iter(lambda: file.read(32768), b""):
                         md5hash.update(b)
                 if md5hash.hexdigest() != md5Expected:
+                    print("  MD5 hash not verified!!!!")
                     os.remove(filename)
                     raise Exception("MD5 hash security check for " + filename + " (" + downloadDestination + ") failed.\n  Expected " + md5Expected + " got " + md5hash.hexdigest())
-                print("  MD5 hash verified")
+                else:
+                    print("  MD5 hash verified")
 
             shutil.move(filename, downloadDestination)
             filename = downloadDestination
@@ -471,7 +473,7 @@ def write_android_gradle_files(groups):
     build_gradle_template = """apply plugin: 'com.android.application'
 
 android {{
-    compileSdkVersion 33
+    compileSdkVersion 34
     namespace "com.quic.{project_name}"
     lintOptions {{
         abortOnError false
@@ -482,8 +484,8 @@ android {{
 
     defaultConfig {{
         applicationId "com.quic.{project_name}"
-        minSdkVersion 26
-        targetSdkVersion 33
+        minSdkVersion 33
+        targetSdkVersion 34
         versionCode 1
         versionName "1.0"
         ndkVersion "${{project.ndkVersionDefault}}"
@@ -497,13 +499,18 @@ android {{
         }}
      }}
 
+    sourceSets {{
+        main {{
+            jniLibs.srcDirs += ['../libs']
+        }}
+    }}
+
     signingConfigs{{
         unsigned{{
             storeFile file("${{System.env.USERPROFILE}}/.android/debug.keystore")
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
-            v2SigningEnabled = false
         }}
     }}
 
@@ -516,6 +523,12 @@ android {{
         debug {{
             debuggable = true
             jniDebuggable = true
+
+            lint {{
+                checkReleaseBuilds false
+                abortOnError false
+                disable 'All'
+            }}
         }}
     }}
 
@@ -566,6 +579,11 @@ android {{
         if (nativeBuildRelease) copyTmpAssets.dependsOn(nativeBuildRelease)
         if (mergeDebugAssets)   mergeDebugAssets.dependsOn(copyTmpAssets)
         if (mergeReleaseAssets) mergeReleaseAssets.dependsOn(copyTmpAssets)
+
+        // Lint model generation also reads source-set assets; keep it ordered after the assets are staged.
+        tasks.matching {{ it.name.endsWith("LintReportModel") }}.configureEach {{
+            dependsOn(copyTmpAssets)
+        }}
     }}
 
     def overrideFile = file("${{project.projectDir}}/../override.gradle")
@@ -776,7 +794,7 @@ if enableUserInterface:
                 # select item (call function)
                 item = all_display[cursorIdx].item
                 item.select()
-            elif key == 'c72' or key == 'e[A': # up
+            elif key == 'c72' or key == 'e[A' or key == 'k': # up
                 if cursorIdx == 0:
                     cursorIdx = len(all_display) - 1
                     topLine = max(0, len(all_display) - numLines)
@@ -784,7 +802,7 @@ if enableUserInterface:
                     cursorIdx = cursorIdx - 1
                     if topLine >= cursorIdx - 1 and topLine > 0:
                         topLine = max(0, cursorIdx - 1)
-            elif key == 'c80' or key == 'e[B': # down
+            elif key == 'c80' or key == 'e[B' or key == 'j': # down
                 cursorIdx = cursorIdx + 1
                 if cursorIdx == len(all_display):
                     cursorIdx = 0
@@ -792,9 +810,9 @@ if enableUserInterface:
                 else:
                     if cursorIdx >= topLine + numLines - 2 and topLine + numLines < len(all_display):
                         topLine = max(0, min(cursorIdx - numLines + 2, len(all_display) - numLines))
-            elif key == 'c77' or key == 'e[C': # right
+            elif key == 'c77' or key == 'e[C' or key == 'l': # right
                 all_display[cursorIdx].open()
-            elif key == 'c75' or key == 'e[D': # left
+            elif key == 'c75' or key == 'e[D' or key == 'h': # left
                 all_display[cursorIdx].close()
 
             if topLine >= cursorIdx - 1 and topLine > 0:

@@ -2,7 +2,7 @@
 
 ![Screenshot](img/screenshot.png)
 
-This sample demonstrates a light clustering algorithm using Vulkan, with specific support for the *VK_QCOM_tile_memory_heap* extension.
+This sample demonstrates a light clustering algorithm using Vulkan, with specific support for the *[VK_QCOM_tile_memory_heap](https://docs.vulkan.org/refpages/latest/refpages/source/VK_QCOM_tile_memory_heap.html)* extension.
 This extension allows the application to allocate and manage tile memory, which is used for efficient memory management within a command buffer submission batch.
 
 The sample showcases how tile memory can be used to optimize rendering performance by reducing memory bandwidth and improving cache locality. It implements a forward rendering pipeline with clustered lighting, where lights are grouped based on screen-space tiles. These tiles are processed using tile-local memory allocations, enabling fast access and minimizing global memory usage.

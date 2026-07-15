@@ -25,7 +25,7 @@ Both Android and Microsoft Windows build targets are supported (some samples may
 
 ### Linux
 
-Tested using WSL running Ubuntu.
+Tested using WSL running Ubuntu, but convienience scripts are not available.
 
 
 ## Build Setup
@@ -72,6 +72,8 @@ and Android builds can be re-ran with
 
 If desired you can also open/build the SampleFramework using Android Studio.  In Android Studio open the project/android folder (initial load of the projects takes a while, subsequent opens are fast).  Using Android Studio to build is untested and not supported!  If you are having problems building framework samples please test using the batch file build scripts before opening any support requests.
 
+Additionally VSCode can be used to build and debug the framework and samples on windows (configuration for android builds not provided). Open the root project framework folder in VSCode with the `ms-vscode.cmake-tools` extension installed, rename the `.vscode/template.settings.json` to `.vscode/settings.json`. After running the configure script, you should be able to use the CMake extension to rebuild and debug the samples. Like using Android Studio, using VSCode to build and debug is untested and not supported!  If you are having problems building framework samples please test using the batch file build scripts before opening any support requests.
+
 ## Running
 
 See the [Samples](samples) folder for instructions on building assets and running individual samples.
@@ -83,7 +85,7 @@ Most samples also support a configuration file (`app_config.txt`) placed in the 
 Android apk are written to `build\android\<samplename>\outputs\apk\debug\`.
 Config files may be pushed to the device using the `sample/<samplename>/install_config.bat` script provided, if available.
 Most sample apks can be installed with the `sample/<samplename>/install_apk.bat` script provided, if available.
-If the Android apk was correctly built (see note above about binary assets) it can be installed with `apk install <apk>` and run from Android.
+If the Android apk was correctly built it can be installed with `apk install <apk>` and run from Android.
 
 ### Windows
 

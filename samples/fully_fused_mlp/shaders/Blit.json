@@ -1,0 +1,58 @@
+{
+	"$schema": "../../../framework/schema/shaderSchema.json",
+	"Passes": [
+		{
+			"Name": "RP_BLIT",
+			"Shaders": {
+				"Vertex": "Media/Shaders/Blit.vert.spv",
+				"Fragment": "Media/Shaders/Blit.frag.spv"
+			},
+			"DescriptorSets": [
+				{
+					"Buffers": [
+						{
+							"Type": "ImageSampler",
+							"Stages": [ "Fragment" ],
+							"Count": 1,
+							"Names": [ "Overlay" ]
+						}
+					]
+				}
+			],
+			"VertexBindings": [ "VB0" ]
+		}
+	],
+	"Vertex": [
+		{
+			"Span": 60,
+			"Name": "VB0",
+			"Elements": [
+				{
+					"Name": "Position",
+					"Offset": 0,
+					"Type": "Vec3"
+				},
+				{
+					"Name": "Normal",
+					"Offset": 12,
+					"Type": "Vec3"
+				},
+				{
+					"Name": "UV",
+					"Offset": 24,
+					"Type": "Vec2"
+				},
+				{
+					"Name": "Color",
+					"Offset": 32,
+					"Type": "Vec4"
+				},
+				{
+					"Name": "Tangent",
+					"Offset": 48,
+					"Type": "Vec3"
+				}
+			]
+		}
+	]
+}

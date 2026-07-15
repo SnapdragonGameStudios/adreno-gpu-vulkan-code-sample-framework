@@ -36,10 +36,12 @@ GuiImguiGfx<Vulkan>::GuiImguiGfx(Vulkan& vulkan, RenderPass<Vulkan> renderPass)
 
 GuiImguiGfx<Vulkan>::~GuiImguiGfx()
 {
-    vkDestroyDescriptorPool(m_GfxApi.m_VulkanDevice, m_DescriptorPool, nullptr);
     //We dont own the render pass// vkDestroyRenderPass(m_GfxApi.m_VulkanDevice, m_RenderPass, nullptr);
-
+    
     ImGui_ImplVulkan_Shutdown();
+
+    // Imgui needs the descriptor pool to release the descriptor sets, we can destroy it after
+    vkDestroyDescriptorPool(m_GfxApi.m_VulkanDevice, m_DescriptorPool, nullptr);
 }
 
 //-----------------------------------------------------------------------------
