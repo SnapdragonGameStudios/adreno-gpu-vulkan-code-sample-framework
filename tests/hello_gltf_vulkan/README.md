@@ -1,6 +1,4 @@
-# Hello GTLF (Vulkan) test application
-
-![Screenshot](img/screenshot.png)
+# Hello GLTF (Vulkan) test application
 
 Hello GLTF sample demonstrates the most basic usage of the Framework to produce a native Vulkan application and it is designed to be small and simple and meant as a starting point for developers to expand its functionality.
 
