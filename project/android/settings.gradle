@@ -23,7 +23,7 @@ if(false) {
 // Helper to add project for sample if it is enabled in settings
 def add_sample_subdirectory(baseName, projectName, folder) {
 
-	def value = ext.frameworkProps.getProperty("FRAMEWORK_" + baseName + "_" + projectName) ?: "true"
+	def value = ext.frameworkProps.getProperty("FRAMEWORK_" + baseName + "_" + projectName) ?: "false"
 	if (value == 'true')
 	{
 		logger.warn("Adding   " + baseName + ": " + projectName)

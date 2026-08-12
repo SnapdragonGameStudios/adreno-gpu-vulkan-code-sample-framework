@@ -67,6 +67,9 @@ class CooperativeMatrixRunner
         double time_total;
         double TOPS;
         double percentage;
+        uint32_t total_m;
+        uint32_t total_n;
+        uint32_t total_k;
         std::optional<bool> validation_pass; // set when validate checkbox is on
     };
 
@@ -120,6 +123,8 @@ private:
 
     void PrepareTestSession();
     std::optional<TestResult> RunTest(const TestDescription& test_description);
+    void LogCorrelationTable() const;
+    double GetReferencePeakTops(VkComponentTypeKHR input_type, VkComponentTypeKHR output_type) const;
 
 private:
 
@@ -139,6 +144,10 @@ private:
     bool m_normalize_inputs = true;
     int m_input_width = 32;
     int m_input_height = 16;
+    int m_reference_clock_mhz = 1025;
+    int m_reference_malu_count = 1536;
+    bool m_log_correlation_table = true;
+    bool m_logged_current_test_summary = false;
 
     bool     m_is_processing_tests   = false;
     uint32_t m_total_tests           = 0;

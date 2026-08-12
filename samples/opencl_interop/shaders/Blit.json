@@ -1,0 +1,49 @@
+{
+	"$schema": "../../../framework/schema/shaderSchema.json",
+	"Passes": [
+		{
+			"Name": "RP_BLIT",
+			"Shaders": {
+				"Vertex": "Media/Shaders/Blit.vert.spv",
+				"Fragment": "Media/Shaders/Blit.frag.spv"
+			},
+			"DescriptorSets": [
+				{
+					"Buffers": [
+						{
+							"Type": "ImageSampler",
+							"Stages": [ "Fragment" ],
+							"Count": 1,
+							"Names": [ "Diffuse" ]
+						},
+						{
+							"Type": "ImageSampler",
+							"Stages": [ "Fragment" ],
+							"Count": 1,
+							"Names": [ "Overlay" ]
+						}
+					]
+				}
+			],
+			"VertexBindings": [ "VB0" ]
+		}
+	],
+	"Vertex": [
+		{
+			"Span": 20,
+			"Name": "VB0",
+			"Elements": [
+				{
+					"Name": "Position",
+					"Offset": 0,
+					"Type": "Vec3"
+				},
+				{
+					"Name": "UV",
+					"Offset": 12,
+					"Type": "Vec2"
+				}
+			]
+		}
+	]
+}

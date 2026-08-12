@@ -503,6 +503,16 @@ Texture<Vulkan> CreateTextureObject<Vulkan>(Vulkan& vulkan, const CreateTexObjec
         ImageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
         ImageInfo.samples = (VkSampleCountFlagBits)texInfo.Msaa;
         break;
+    case TT_RENDER_TARGET_SAMPLED_TRANSFERSRC:
+        ImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        ImageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        ImageInfo.samples = (VkSampleCountFlagBits)texInfo.Msaa;
+        break;
+    case TT_RENDER_TARGET_SAMPLED_TRANSFERDST:
+        ImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        ImageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        ImageInfo.samples = (VkSampleCountFlagBits)texInfo.Msaa;
+        break;
     case TT_RENDER_TARGET_SUBPASS:
     case TT_RENDER_TARGET_LOCAL_READ_TRANSIENT:
         // Subpass render targets dont need to be backed by memory!
@@ -599,6 +609,11 @@ Texture<Vulkan> CreateTextureObject<Vulkan>(Vulkan& vulkan, const CreateTexObjec
         vulkan.SetImageLayout(vmaImage.GetVkBuffer(), SetupCmdBuffer, VK_IMAGE_ASPECT_COLOR_BIT, ImageInfo.initialLayout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, (VkPipelineStageFlags)0/*unused param*/, (VkPipelineStageFlags)0/*unused param*/, 0, 1, 0, 1);
         retImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
         break;
+    case TT_RENDER_TARGET_SAMPLED_TRANSFERSRC:
+    case TT_RENDER_TARGET_SAMPLED_TRANSFERDST:
+        vulkan.SetImageLayout(vmaImage.GetVkBuffer(), SetupCmdBuffer, VK_IMAGE_ASPECT_COLOR_BIT, ImageInfo.initialLayout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, (VkPipelineStageFlags)0/*unused param*/, (VkPipelineStageFlags)0/*unused param*/, 0, 1, 0, 1);
+        retImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        break;
     case TT_RENDER_TARGET_LOCAL_READ:
     case TT_RENDER_TARGET_LOCAL_READ_TRANSIENT:
         retImageLayout = VK_IMAGE_LAYOUT_RENDERING_LOCAL_READ_KHR;
@@ -676,6 +691,8 @@ Texture<Vulkan> CreateTextureObject<Vulkan>(Vulkan& vulkan, const CreateTexObjec
     case TT_RENDER_TARGET:
     case TT_RENDER_TARGET_WITH_STORAGE:
     case TT_RENDER_TARGET_TRANSFERSRC:
+    case TT_RENDER_TARGET_SAMPLED_TRANSFERSRC:
+    case TT_RENDER_TARGET_SAMPLED_TRANSFERDST:
     case TT_RENDER_TARGET_SUBPASS:
     case TT_COMPUTE_TARGET:
     case TT_COMPUTE_STORAGE:

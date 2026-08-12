@@ -1,0 +1,2 @@
+gSurfaceWidth = 1920
+gSurfaceHeight = 1080

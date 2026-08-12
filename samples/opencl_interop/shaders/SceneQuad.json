@@ -1,0 +1,39 @@
+{
+	"$schema": "../../../framework/schema/shaderSchema.json",
+	"Passes": [
+		{
+			"Name": "RP_SCENE",
+			"Shaders": {
+				"Vertex": "Media/Shaders/SceneQuad.vert.spv",
+				"Fragment": "Media/Shaders/SceneQuad.frag.spv"
+			},
+			"VertexBindings": [ "VB0" ],
+			"FixedFunction": {
+				"CullBackFace": false,
+				"DepthTestEnable": false,
+				"DepthWriteEnable": false
+			},
+			"Outputs": [
+				{ "BlendEnable": false }
+			]
+		}
+	],
+	"Vertex": [
+		{
+			"Span": 20,
+			"Name": "VB0",
+			"Elements": [
+				{
+					"Name": "Position",
+					"Offset": 0,
+					"Type": "Vec3"
+				},
+				{
+					"Name": "UV",
+					"Offset": 12,
+					"Type": "Vec2"
+				}
+			]
+		}
+	]
+}
