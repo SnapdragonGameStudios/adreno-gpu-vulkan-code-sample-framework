@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+
 //=============================================================================
 //
 //                  Copyright (c) 2022 QUALCOMM Technologies Inc.
@@ -122,6 +124,7 @@ enum TEXTURE_TYPE
     TT_RENDER_TARGET,
     TT_RENDER_TARGET_WITH_STORAGE,
     TT_RENDER_TARGET_TRANSFERSRC,
+    TT_RENDER_TARGET_WITH_STORAGE_TRANSFERSRC,
     TT_RENDER_TARGET_SAMPLED_TRANSFERSRC,
     TT_RENDER_TARGET_SAMPLED_TRANSFERDST,
     TT_RENDER_TARGET_SUBPASS,

@@ -1,12 +1,11 @@
-# Snapdragon™ Game Super Resolution 2 Sample
+# Snapdragon™ Game Super Resolution 2 sample
 
-![Screenshot](img/screenshot.png)
+![Snapdragon™ Game Super Resolution 2 sample output](img/screenshot.png)
 
-This sample demonstrates how to use [Snapdragon™ Game Super Resolution 2](https://github.com/SnapdragonGameStudios/snapdragon-gsr).
+Integrates the compute three-pass variant of [Snapdragon™ Game Super Resolution 2](https://github.com/SnapdragonGameStudios/snapdragon-gsr).
 
-Snapdragon™ Game Super Resolution 2 (Snapdragon™ GSR 2 or SGSR 2) was developed by Qualcomm Snapdragon Game Studios. It's a temporal upscaling solution optimized for Adreno devices. It comes with 3 different variants (compute 3-pass is the one being demonstrated on this sample).
+Snapdragon™ GSR 2 (SGSR 2) uses temporal inputs to reconstruct a higher-resolution image. Inspect the sample's motion-vector and jitter handling when adapting it to another renderer.
 
-## Running
+## Build and run
 
-- If you haven't already, setup the framework and build the code [instructions here](../../README.md#configuring)
-- Running this sample has no special additional requirements [instructions here](../../README.md#running)
+Follow the [framework setup](../../README.md#configuring), select `sgsr2`, and build the target platform. Use the [run instructions](../../README.md#running) for installation, working directories, and configuration.

@@ -176,3 +176,8 @@ framework/external/implot/
 project/android/.idea/
 framework/external/json.tar.xz
 .idea/misc.xml
+
+# Internal agent guidance
+AGENTS.md
+CLAUDE.md
+.skills/

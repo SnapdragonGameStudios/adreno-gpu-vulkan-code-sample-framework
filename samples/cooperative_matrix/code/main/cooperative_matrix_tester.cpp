@@ -36,7 +36,6 @@
 #include <iostream>
 #include <filesystem>
 #include <sstream>
-#include <iomanip>
 
 #define CHECK_VK(cmd)                                                                           \
     {                                                                                           \
@@ -185,6 +184,9 @@ namespace
 
         bool layoutA_Mfirst;
         bool layoutB_Kfirst;
+        bool layoutB_Nfirst;
+        bool layoutA_TiledKfirst;
+        bool layoutB_TiledKfirst;
         bool layoutC_Mfirst;
         bool layoutR_Mfirst;
 
@@ -223,6 +225,18 @@ namespace
         "invalid",
         "queuefamily",
     };
+
+    const char* GetLayoutName(MatrixLayout layout)
+    {
+        switch (layout)
+        {
+            case MatrixLayout::K_FIRST: return "K-first";
+            case MatrixLayout::M_FIRST: return "M-first";
+            case MatrixLayout::N_FIRST: return "N-first";
+            case MatrixLayout::TILED_K_FIRST: return "TiledK-first";
+            default: return "Unknown";
+        }
+    }
 
     struct MatrixDesc
     {
@@ -580,24 +594,33 @@ bool CooperativeMatrixRunner::InitializeRunner()
         LOGI("\tSaturating Accumulation: %u | Scope: %u\n\n", cm.saturatingAccumulation, cm.scope);
     }
 
-    // Setup the default correlation profile templates:
-    // M=512, N=384 with NTile={64,32,16}
-    // FP16 uses K=2048 (tileK=16, blocks=128)
-    // INT8 uses K=4096 (tileK=32, blocks=128)
-    m_test_group_templates.clear();
+    // Setup the test templates
+    m_test_group_templates.push_back(TestGroupTemplateDescription{
+        VK_COMPONENT_TYPE_FLOAT32_KHR ,
+        VK_COMPONENT_TYPE_FLOAT32_KHR ,
+        {
+            {8,  6, 128, // SizeInBlocks
+             64, 64, 8}, // Size (tile)
+
+            {8,  12, 128,
+             64, 32, 16},
+
+            {8,  24, 128,
+             64, 16, 32}
+        } });
 
     m_test_group_templates.push_back(TestGroupTemplateDescription{
         VK_COMPONENT_TYPE_FLOAT16_KHR ,
         VK_COMPONENT_TYPE_FLOAT16_KHR ,
         {
             {8, 6, 128, // SizeInBlocks
-             64, 64, 16}, // Size (tile)
+             0, 64, 0}, // Size (tile)
 
             {8, 12, 128,
-             64, 32, 16},
+             0, 32, 0},
 
             {8, 24, 128,
-             64, 16, 16}
+             0, 16, 0}
         } });
 
     m_test_group_templates.push_back(TestGroupTemplateDescription{
@@ -605,13 +628,13 @@ bool CooperativeMatrixRunner::InitializeRunner()
         VK_COMPONENT_TYPE_SINT32_KHR ,
         {
             {8, 6, 128, // SizeInBlocks
-             64, 64, 32}, // Size (tile)
+             0, 64, 0}, // Size (tile)
 
             {8, 12, 128,
-             64, 32, 32},
+             0, 32, 0},
 
             {8, 24, 128,
-             64, 16, 32}
+             0, 16, 0}
         } });
 
     return true;
@@ -652,11 +675,6 @@ bool CooperativeMatrixRunner::TriggerPendingTests()
     }
 
     m_is_processing_tests = false;
-    if (m_log_correlation_table && !m_logged_current_test_summary)
-    {
-        LogCorrelationTable();
-        m_logged_current_test_summary = true;
-    }
 
     return true;
 }
@@ -670,10 +688,28 @@ void CooperativeMatrixRunner::RenderUI()
     if (ImGui::CollapsingHeader("Test Configuration", ImGuiTreeNodeFlags_DefaultOpen))
     {
         ImGui::DragInt("Test Repeats", &m_test_repeats, 1.0f, 0, 100);
-        ImGui::DragInt("Reference Clock (MHz)", &m_reference_clock_mhz, 1.0f, 100, 3000);
-        ImGui::DragInt("MALU Count", &m_reference_malu_count, 1.0f, 1, 16384);
-        ImGui::TextDisabled("Correlation profile: GEMM M=512, N=384, NTile={64,32,16}");
-        ImGui::TextDisabled("FP16 K=2048, INT8 K=4096 | %% = TOPS / MALU peak @ reference clock");
+        static const char* benchmark_mode_names[] = {
+            "Layout Comparison",
+            "Custom Matrix Layouts",
+            "Legacy Tests",
+        };
+
+        int benchmark_mode_current_index = static_cast<int>(m_benchmark_mode);
+        if (ImGui::BeginCombo("Benchmark Mode", benchmark_mode_names[benchmark_mode_current_index]))
+        {
+            for (int i = 0; i < IM_ARRAYSIZE(benchmark_mode_names); ++i)
+            {
+                const bool is_selected = benchmark_mode_current_index == i;
+                if (ImGui::Selectable(benchmark_mode_names[i], is_selected))
+                {
+                    m_benchmark_mode = static_cast<BenchmarkMode>(i);
+                }
+
+                if (is_selected)
+                    ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
 
         static const char* test_case_names[] = {
             "MxM Basic",
@@ -681,12 +717,17 @@ void CooperativeMatrixRunner::RenderUI()
             "CONV",
         };
 
+        if (m_benchmark_mode == BenchmarkMode::LAYOUT_COMPARISON)
+        {
+            m_test_type = TT_MXM_BASIC;
+        }
+
         int test_type_current_index = static_cast<int>(m_test_type);
-        bool changed = false;
 
         ImGui::Text("Note: Not all tests are compatible with all devices!");
         ImGui::Text("Check shader instruction set for compatibility if testing other than MXM_BASIC");
 
+        ImGui::BeginDisabled(m_benchmark_mode == BenchmarkMode::LAYOUT_COMPARISON);
         if (ImGui::BeginCombo("Test Case", test_case_names[test_type_current_index]))
         {
             // NOTE: Temporarily disabled other tests, new test template coming on the next patch
@@ -696,7 +737,6 @@ void CooperativeMatrixRunner::RenderUI()
                 if (ImGui::Selectable(test_case_names[i], is_selected))
                 {
                     m_test_type = static_cast<TestType>(i);
-                    changed     = true;
                 }
 
                 if (is_selected)
@@ -704,11 +744,18 @@ void CooperativeMatrixRunner::RenderUI()
             }
             ImGui::EndCombo();
         }
+        ImGui::EndDisabled();
 
         ImGui::BeginDisabled(m_test_type != TestType::TT_CONV);
         ImGui::DragInt("Conv Width", &m_input_width, 1.0f, 1, 256);
         ImGui::DragInt("Conv Height", &m_input_height, 1.0f, 1, 256);
         ImGui::Checkbox("Normalize Inputs", &m_normalize_inputs);
+        ImGui::EndDisabled();
+
+        ImGui::Separator();
+        ImGui::Checkbox("Show Peak Percentage", &m_show_peak_percentage);
+        ImGui::BeginDisabled(!m_show_peak_percentage);
+        ImGui::DragFloat("Peak Frequency MHz", &m_peak_frequency_mhz, 1.0f, 1.0f, 3000.0f, "%.0f");
         ImGui::EndDisabled();
     }
 
@@ -734,30 +781,68 @@ void CooperativeMatrixRunner::RenderUI()
 
         ImGui::Separator();
 
-        static const char* option_labels[] = { "True", "False", "Variable" };
-        static const char* matrix_labels[] = { "A", "B", "C", "R"};
-
-        for (std::size_t i = 0; i < NUM_MATS; ++i)
+        if (m_benchmark_mode == BenchmarkMode::CUSTOM_LAYOUTS)
         {
-            int current_index = static_cast<int>(m_matrix_transpose_options[i]);
+            static const char* a_layout_labels[] = { "TiledK-first", "M-first", "K-first" };
+            static const MatrixLayout a_layout_values[] = { MatrixLayout::TILED_K_FIRST, MatrixLayout::M_FIRST, MatrixLayout::K_FIRST };
+            static const char* b_layout_labels[] = { "TiledK-first", "N-first", "K-first" };
+            static const MatrixLayout b_layout_values[] = { MatrixLayout::TILED_K_FIRST, MatrixLayout::N_FIRST, MatrixLayout::K_FIRST };
+            static const char* r_layout_labels[] = { "N-first", "M-first" };
+            static const MatrixLayout r_layout_values[] = { MatrixLayout::N_FIRST, MatrixLayout::M_FIRST };
 
-            char label[32];
-            std::snprintf(label, sizeof(label), "Transpose Matrix %s", matrix_labels[i]);
-
-            if (ImGui::Combo(label, &current_index, option_labels, IM_ARRAYSIZE(option_labels)))
+            auto layoutCombo = [](const char* label, MatrixLayout& value, const char* const* labels, const MatrixLayout* values, int count)
             {
-                m_matrix_transpose_options[i] = static_cast<MatrixTransposeOption>(current_index);
+                int current_index = 0;
+                for (int i = 0; i < count; ++i)
+                {
+                    if (values[i] == value)
+                    {
+                        current_index = i;
+                        break;
+                    }
+                }
+
+                if (ImGui::Combo(label, &current_index, labels, count))
+                {
+                    value = values[current_index];
+                }
+            };
+
+            layoutCombo("A Layout", m_custom_layout_a, a_layout_labels, a_layout_values, IM_ARRAYSIZE(a_layout_values));
+            layoutCombo("B Layout", m_custom_layout_b, b_layout_labels, b_layout_values, IM_ARRAYSIZE(b_layout_values));
+            layoutCombo("Output Layout", m_custom_layout_r, r_layout_labels, r_layout_values, IM_ARRAYSIZE(r_layout_values));
+        }
+        else if (m_benchmark_mode == BenchmarkMode::LEGACY_TESTS)
+        {
+            static const char* option_labels[] = { "True", "False", "Variable" };
+            static const char* matrix_labels[] = { "A", "B", "C", "R"};
+
+            for (std::size_t i = 0; i < NUM_MATS; ++i)
+            {
+                int current_index = static_cast<int>(m_matrix_transpose_options[i]);
+
+                char label[32];
+                std::snprintf(label, sizeof(label), "Transpose Matrix %s", matrix_labels[i]);
+
+                if (ImGui::Combo(label, &current_index, option_labels, IM_ARRAYSIZE(option_labels)))
+                {
+                    m_matrix_transpose_options[i] = static_cast<MatrixTransposeOption>(current_index);
+                }
             }
         }
+        else
+        {
+            ImGui::TextDisabled("The default table uses fixed layout rows.");
+        }
 
-        if (m_validate_matrix_result)
+        if (m_benchmark_mode == BenchmarkMode::LEGACY_TESTS && m_validate_matrix_result)
         {
             ImGui::BeginDisabled();
             static bool always_true = true;
             ImGui::Checkbox("Transpose When Needed", &always_true);
             ImGui::EndDisabled();
         }
-        else
+        else if (m_benchmark_mode == BenchmarkMode::LEGACY_TESTS)
         {
             ImGui::Checkbox("Transpose When Needed", &m_transpose_when_needed);
         }
@@ -809,18 +894,6 @@ void CooperativeMatrixRunner::RenderUI()
                 GetMatrixComponentTypeName(test_group.template_description.output_type) +
                 std::string(" output");
 
-            if (!test_group.template_description.size_configurations.empty())
-            {
-                const auto& first_cfg = test_group.template_description.size_configurations.front();
-                if (first_cfg.KSize > 0)
-                {
-                    collapsing_header_title += std::string(" (K=") +
-                        std::to_string(first_cfg.KSizeInBlocks * first_cfg.KSize) + ")";
-                }
-            }
-
-            const bool show_matrix_d = false;
-
             if (ImGui::CollapsingHeader(collapsing_header_title.c_str()))
             {
                 ImGuiStyle& style                   = ImGui::GetStyle();
@@ -828,16 +901,11 @@ void CooperativeMatrixRunner::RenderUI()
                 style.ScrollbarSize                 = 40.0f;
 
                 ImGui::BeginChild("##test_results");
-                if (ImGui::BeginTable("TestResultTable", (NUM_MATS - (show_matrix_d ? 0 : 1)) + 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable))
+                if (ImGui::BeginTable("TestResultTable", 6, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable))
                 {
-                    ImGui::TableSetupColumn("A Layout", ImGuiTableColumnFlags_WidthFixed, 120.0f);
-                    ImGui::TableSetupColumn("B Layout", ImGuiTableColumnFlags_WidthFixed, 120.0f);
-                    ImGui::TableSetupColumn("C Layout", ImGuiTableColumnFlags_WidthFixed, 120.0f);
-
-                    if (show_matrix_d)
-                    {
-                        ImGui::TableSetupColumn("D", ImGuiTableColumnFlags_WidthFixed, 100.0f);
-                    }
+                    ImGui::TableSetupColumn("A Layout", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+                    ImGui::TableSetupColumn("B Layout", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+                    ImGui::TableSetupColumn("Output Layout", ImGuiTableColumnFlags_WidthFixed, 120.0f);
 
                     for (const auto& size_configuration : test_group.template_description.size_configurations)
                     {
@@ -855,22 +923,14 @@ void CooperativeMatrixRunner::RenderUI()
                         ImGui::TableNextRow();
 
                         // Transpose flags
-                        const char* tiled_k_label = (m_test_type == TT_MXM_BASIC) ? "TiledK-first" : "K-first";
+                        ImGui::TableSetColumnIndex(current_column_index++);
+                        ImGui::Text("%s", GetLayoutName(test_entry.layoutA));
 
                         ImGui::TableSetColumnIndex(current_column_index++);
-                        ImGui::Text("%s", test_entry.layoutA_Mfirst ? "M-first" : tiled_k_label);
+                        ImGui::Text("%s", GetLayoutName(test_entry.layoutB));
 
                         ImGui::TableSetColumnIndex(current_column_index++);
-                        ImGui::Text("%s", test_entry.layoutB_Nfirst ? "N-first" : tiled_k_label);
-
-                        ImGui::TableSetColumnIndex(current_column_index++);
-                        ImGui::Text("%s", test_entry.layoutC_Mfirst ? "M-first" : "N-first");
-
-                        if (show_matrix_d)
-                        {
-                            ImGui::TableSetColumnIndex(current_column_index++);
-                            ImGui::Text("%s", test_entry.layoutR_Mfirst ? "M-first" : "N-first");
-                        }
+                        ImGui::Text("%s", GetLayoutName(test_entry.layoutR));
 
                         // For each of the NSize configs
                         for (int test_result_index = 0; test_result_index < test_entry.test_results.size(); test_result_index++)
@@ -913,10 +973,17 @@ void CooperativeMatrixRunner::RenderUI()
                                 if (m_test_type == TT_CONV)
                                     ImGui::TextDisabled("WxH = %dx%d", test_description.inputWidth, test_description.inputHeight);
 
-                                ImVec4 color = GetPercentageColor(test_result.percentage / 100.0f);
-                                ImGui::PushStyleColor(ImGuiCol_Text, color);
-                                ImGui::Text("[%% @%dMHz]: %.2f%%", m_reference_clock_mhz, test_result.percentage);
-                                ImGui::PopStyleColor();
+                                if (m_show_peak_percentage && test_result.percentage > 0.0)
+                                {
+                                    ImVec4 color = GetPercentageColor(test_result.percentage / 100.0f);
+                                    ImGui::PushStyleColor(ImGuiCol_Text, color);
+                                    ImGui::Text("[%% @%.0fMHz]: %.2f", m_peak_frequency_mhz, test_result.percentage);
+                                    ImGui::PopStyleColor();
+                                }
+                                else if (m_show_peak_percentage)
+                                {
+                                    ImGui::TextDisabled("[%% @%.0fMHz]: N/A", m_peak_frequency_mhz);
+                                }
                             }
                             else
                             {
@@ -938,148 +1005,6 @@ void CooperativeMatrixRunner::RenderUI()
     ImGui::EndDisabled();
 }
 
-double CooperativeMatrixRunner::GetReferencePeakTops(VkComponentTypeKHR input_type, VkComponentTypeKHR output_type) const
-{
-    if (m_reference_clock_mhz <= 0 || m_reference_malu_count <= 0)
-    {
-        return 0.0;
-    }
-
-    double ops_per_cycle_per_malu = 0.0;
-    if (input_type == VK_COMPONENT_TYPE_FLOAT16_KHR && output_type == VK_COMPONENT_TYPE_FLOAT16_KHR)
-    {
-        ops_per_cycle_per_malu = 2.0;
-    }
-    else if (input_type == VK_COMPONENT_TYPE_SINT8_KHR && output_type == VK_COMPONENT_TYPE_SINT32_KHR)
-    {
-        ops_per_cycle_per_malu = 4.0;
-    }
-    else if (input_type == VK_COMPONENT_TYPE_FLOAT32_KHR && output_type == VK_COMPONENT_TYPE_FLOAT32_KHR)
-    {
-        ops_per_cycle_per_malu = 1.0;
-    }
-
-    if (ops_per_cycle_per_malu <= 0.0)
-    {
-        return 0.0;
-    }
-
-    return static_cast<double>(m_reference_malu_count) *
-           static_cast<double>(m_reference_clock_mhz) *
-           ops_per_cycle_per_malu /
-           1e6;
-}
-
-void CooperativeMatrixRunner::LogCorrelationTable() const
-{
-    const char* tiled_k_label = (m_test_type == TT_MXM_BASIC) ? "TiledK-first" : "K-first";
-    auto get_layout_a_label = [&](bool layout_a_m_first) -> const char*
-    {
-        return layout_a_m_first ? "M-first" : tiled_k_label;
-    };
-    auto get_layout_b_label = [&](bool layout_b_n_first) -> const char*
-    {
-        return layout_b_n_first ? "N-first" : tiled_k_label;
-    };
-    auto get_layout_c_label = [&](bool layout_c_m_first) -> const char*
-    {
-        return layout_c_m_first ? "M-first" : "N-first";
-    };
-
-    std::ostringstream output;
-    output << "\n=== VKCoopMat Correlation Summary (@"
-           << m_reference_clock_mhz
-           << "MHz, MALU="
-           << m_reference_malu_count
-           << ") ===\n";
-
-    for (const auto& test_group : m_test_groups)
-    {
-        bool has_valid_result = false;
-        for (const auto& test_entry : test_group.test_entries)
-        {
-            for (const auto& test_result : test_entry.test_results)
-            {
-                if (test_result.is_valid)
-                {
-                    has_valid_result = true;
-                    break;
-                }
-            }
-            if (has_valid_result)
-            {
-                break;
-            }
-        }
-
-        if (!has_valid_result)
-        {
-            continue;
-        }
-
-        uint32_t k_value = 0;
-        for (const auto& test_entry : test_group.test_entries)
-        {
-            for (const auto& test_result : test_entry.test_results)
-            {
-                if (test_result.is_valid && test_result.total_k > 0)
-                {
-                    k_value = test_result.total_k;
-                    break;
-                }
-            }
-            if (k_value > 0)
-            {
-                break;
-            }
-        }
-
-        output << GetMatrixComponentTypeName(test_group.template_description.input_type)
-               << " input / "
-               << GetMatrixComponentTypeName(test_group.template_description.output_type)
-               << " output";
-        if (k_value > 0)
-        {
-            output << " (K=" << k_value << ")";
-        }
-        output << "\n";
-
-        output << "A Layout\tB Layout\tC Layout";
-        for (const auto& size_configuration : test_group.template_description.size_configurations)
-        {
-            output << "\tNTile=" << size_configuration.NSize;
-        }
-        output << "\n";
-
-        for (const auto& test_entry : test_group.test_entries)
-        {
-            output << get_layout_a_label(test_entry.layoutA_Mfirst) << "\t"
-                   << get_layout_b_label(test_entry.layoutB_Nfirst) << "\t"
-                   << get_layout_c_label(test_entry.layoutC_Mfirst);
-
-            for (const auto& test_result : test_entry.test_results)
-            {
-                if (test_result.is_valid)
-                {
-                    output << "\t" << std::fixed << std::setprecision(2) << test_result.percentage << "%";
-                }
-                else
-                {
-                    output << "\tN/A";
-                }
-            }
-
-            output << "\n";
-        }
-
-        output << "\n";
-    }
-
-    const std::string table_text = output.str();
-    LOGI("%s", table_text.c_str());
-    std::cout << table_text << std::endl;
-}
-
 void CooperativeMatrixRunner::PrepareTestSession()
 {
     m_vulkan_instance.WaitUntilIdle();
@@ -1087,11 +1012,37 @@ void CooperativeMatrixRunner::PrepareTestSession()
     m_test_groups.clear();
     m_total_tests           = 0;
     m_total_processed_tests = 0;
-    m_logged_current_test_summary = false;
 
-    auto GenerateTransposeCombinations = [&]() -> std::vector<std::vector<bool>>
+    struct LayoutCombination
     {
-        std::vector<std::vector<bool>> combinations;
+        MatrixLayout layoutA;
+        MatrixLayout layoutB;
+        MatrixLayout layoutR;
+        bool layoutC_Mfirst = false;
+    };
+
+    auto GenerateLayoutCombinations = [&]() -> std::vector<LayoutCombination>
+    {
+        if (m_benchmark_mode == BenchmarkMode::LAYOUT_COMPARISON)
+        {
+            return {
+                { MatrixLayout::TILED_K_FIRST, MatrixLayout::TILED_K_FIRST, MatrixLayout::N_FIRST, false },
+                { MatrixLayout::M_FIRST,       MatrixLayout::TILED_K_FIRST, MatrixLayout::N_FIRST, false },
+                { MatrixLayout::TILED_K_FIRST, MatrixLayout::N_FIRST,       MatrixLayout::N_FIRST, false },
+                { MatrixLayout::M_FIRST,       MatrixLayout::N_FIRST,       MatrixLayout::N_FIRST, false },
+                { MatrixLayout::TILED_K_FIRST, MatrixLayout::TILED_K_FIRST, MatrixLayout::M_FIRST, true },
+                { MatrixLayout::M_FIRST,       MatrixLayout::TILED_K_FIRST, MatrixLayout::M_FIRST, true },
+                { MatrixLayout::TILED_K_FIRST, MatrixLayout::N_FIRST,       MatrixLayout::M_FIRST, true },
+                { MatrixLayout::M_FIRST,       MatrixLayout::N_FIRST,       MatrixLayout::M_FIRST, true },
+            };
+        }
+
+        if (m_benchmark_mode == BenchmarkMode::CUSTOM_LAYOUTS)
+        {
+            return { { m_custom_layout_a, m_custom_layout_b, m_custom_layout_r, m_custom_layout_r == MatrixLayout::M_FIRST } };
+        }
+
+        std::vector<LayoutCombination> combinations;
 
         std::vector<std::size_t> variable_indices;
         std::vector<bool> fixed_values(NUM_MATS);
@@ -1130,16 +1081,27 @@ void CooperativeMatrixRunner::PrepareTestSession()
                 current[index] = (combo >> bit) & 1;
             }
 
-            combinations.push_back(std::move(current));
+            combinations.push_back(LayoutCombination{
+                current[MAT_A] ? MatrixLayout::M_FIRST : MatrixLayout::K_FIRST,
+                current[MAT_B] ? MatrixLayout::K_FIRST : MatrixLayout::N_FIRST,
+                current[MAT_R] ? MatrixLayout::M_FIRST : MatrixLayout::N_FIRST,
+                current[MAT_C],
+            });
         }
 
         return combinations;
     };
 
-    const auto transpose_combinations = GenerateTransposeCombinations();
+    const auto layout_combinations = GenerateLayoutCombinations();
 
     for (const auto& test_template_description : m_test_group_templates)
     {
+        if (m_benchmark_mode == BenchmarkMode::LAYOUT_COMPARISON &&
+            test_template_description.input_type == VK_COMPONENT_TYPE_FLOAT32_KHR)
+        {
+            continue;
+        }
+
         TestGroup new_test_group;
         new_test_group.template_description = test_template_description;
 
@@ -1156,19 +1118,19 @@ void CooperativeMatrixRunner::PrepareTestSession()
 
         new_test_description.perf_loop = static_cast<uint32_t>(m_test_repeats);
 
-        for (auto& transposeCombination : transpose_combinations)
+        for (auto& layoutCombination : layout_combinations)
         {
             TestGroup::TestRowEntry test_entry;
 
-            new_test_description.layoutA_Mfirst = transposeCombination[0];
-            new_test_description.layoutB_Nfirst = transposeCombination[1];
-            new_test_description.layoutC_Mfirst = transposeCombination[2];
-            new_test_description.layoutR_Mfirst = transposeCombination[3];
+            new_test_description.layoutA = layoutCombination.layoutA;
+            new_test_description.layoutB = layoutCombination.layoutB;
+            new_test_description.layoutR = layoutCombination.layoutR;
+            new_test_description.layoutC_Mfirst = layoutCombination.layoutC_Mfirst;
 
-            test_entry.layoutA_Mfirst = new_test_description.layoutA_Mfirst;
-            test_entry.layoutB_Nfirst = new_test_description.layoutB_Nfirst;
+            test_entry.layoutA = new_test_description.layoutA;
+            test_entry.layoutB = new_test_description.layoutB;
+            test_entry.layoutR = new_test_description.layoutR;
             test_entry.layoutC_Mfirst = new_test_description.layoutC_Mfirst;
-            test_entry.layoutR_Mfirst = new_test_description.layoutR_Mfirst;
 
             for (auto& size_configuration : test_template_description.size_configurations)
             {
@@ -1208,10 +1170,13 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
 
     uint32_t perf_loop = test_description.perf_loop;
     
-    bool layoutA_Mfirst = test_description.layoutA_Mfirst;
-    bool layoutB_Kfirst = !test_description.layoutB_Nfirst;
+    bool layoutA_Mfirst = test_description.layoutA == MatrixLayout::M_FIRST;
+    bool layoutA_TiledKfirst = test_description.layoutA == MatrixLayout::TILED_K_FIRST;
+    bool layoutB_Nfirst = test_description.layoutB == MatrixLayout::N_FIRST;
+    bool layoutB_Kfirst = test_description.layoutB == MatrixLayout::K_FIRST;
+    bool layoutB_TiledKfirst = test_description.layoutB == MatrixLayout::TILED_K_FIRST;
     bool layoutC_Mfirst = test_description.layoutC_Mfirst;
-    bool layoutR_Mfirst = test_description.layoutR_Mfirst;
+    bool layoutR_Mfirst = test_description.layoutR == MatrixLayout::M_FIRST;
 
     int inputWidth  = test_description.inputWidth;
     int inputHeight = test_description.inputHeight;
@@ -1468,20 +1433,16 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
     int mR_paddedM = testCase.TOTAL_M;
     int mR_paddedN = testCase.TOTAL_N;
 
-    if (layoutA_Mfirst) mA_paddedM += (mA_paddedM % (128 / bytesPerInput))  ? 0 : 64 / bytesPerInput;  else  mA_paddedK += (mA_paddedK % (128 / bytesPerInput)) ? 0 : 64 / bytesPerInput;
-    if (layoutB_Kfirst) mB_paddedK += (mB_paddedK % (128 / bytesPerInput))  ? 0 : 64 / bytesPerInput;  else  mB_paddedN += (mB_paddedN % (128 / bytesPerInput)) ? 0 : 64 / bytesPerInput;
+    if (!layoutA_TiledKfirst)
+    {
+        if (layoutA_Mfirst) mA_paddedM += (mA_paddedM % (128 / bytesPerInput))  ? 0 : 64 / bytesPerInput;  else  mA_paddedK += (mA_paddedK % (128 / bytesPerInput)) ? 0 : 64 / bytesPerInput;
+    }
+    if (!layoutB_TiledKfirst)
+    {
+        if (layoutB_Kfirst) mB_paddedK += (mB_paddedK % (128 / bytesPerInput))  ? 0 : 64 / bytesPerInput;  else  mB_paddedN += (mB_paddedN % (128 / bytesPerInput)) ? 0 : 64 / bytesPerInput;
+    }
     if (layoutC_Mfirst) mC_paddedM += (mC_paddedM % (128 / bytesPerOutput)) ? 0 : 64 / bytesPerOutput; else  mC_paddedN += (mC_paddedN % (128 / bytesPerOutput)) ? 0 : 64 / bytesPerOutput;
     if (layoutR_Mfirst) mR_paddedM += (mR_paddedM % (128 / bytesPerOutput)) ? 0 : 64 / bytesPerOutput; else  mR_paddedN += (mR_paddedN % (128 / bytesPerOutput)) ? 0 : 64 / bytesPerOutput;
-
-    // Tiled-K-first layout (used by TT_MXM_BASIC) removes the need for padding on A and B.
-    // The tiling itself provides the required alignment.
-    if (tt == TT_MXM_BASIC)
-    {
-        mA_paddedM = testCase.TOTAL_M;
-        mA_paddedK = testCase.TOTAL_K;
-        mB_paddedN = testCase.TOTAL_N;
-        mB_paddedK = testCase.TOTAL_K;
-    }
 
     // Each cooperative matrix multiply is R[TILE_M, TILE_N] = A[TILE_M, TILE_K] x B[TILE_K, TILE_N] + C[TILE_M, TILE_N]
     testCase.TILE_M = cooperativeMatrixProps.MSize;
@@ -1490,11 +1451,14 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
 
     testCase.layoutA_Mfirst = (uint32_t)layoutA_Mfirst;
     testCase.layoutB_Kfirst = (uint32_t)layoutB_Kfirst;
+    testCase.layoutB_Nfirst = (uint32_t)layoutB_Nfirst;
+    testCase.layoutA_TiledKfirst = (uint32_t)layoutA_TiledKfirst;
+    testCase.layoutB_TiledKfirst = (uint32_t)layoutB_TiledKfirst;
     testCase.layoutC_Mfirst = (uint32_t)layoutC_Mfirst;
     testCase.layoutR_Mfirst = (uint32_t)layoutR_Mfirst;
 
-    testCase.strideAinElements = (layoutA_Mfirst ? mA_paddedM : mA_paddedK);
-    testCase.strideBinElements = (layoutB_Kfirst ? mB_paddedK : mB_paddedN);
+    testCase.strideAinElements = layoutA_TiledKfirst ? testCase.TILE_K : (layoutA_Mfirst ? mA_paddedM : mA_paddedK);
+    testCase.strideBinElements = layoutB_TiledKfirst ? testCase.TILE_K : (layoutB_Kfirst ? mB_paddedK : mB_paddedN);
     testCase.strideCinElements = (layoutC_Mfirst ? mC_paddedM : mC_paddedN);
     testCase.strideRinElements = (layoutR_Mfirst ? mR_paddedM : mR_paddedN);
 
@@ -1742,26 +1706,45 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
         savedB.assign((const uint8_t*)matrices[MAT_B].ptr, (const uint8_t*)matrices[MAT_B].ptr + matrices[MAT_B].bufferSize);
     }
 
-    // For Tiled-K-first layout: transform matrices A and B in-place after standard initialization.
-    // C and D (result) matrices are NOT transformed.
     if (tt == TT_MXM_BASIC)
     {
         auto applyTransform = [&](auto* ptrA, auto* ptrB)
         {
             using T = std::remove_pointer_t<decltype(ptrA)>;
-            std::vector<T> tempA(testCase.TOTAL_M * testCase.TOTAL_K);
-            std::vector<T> tempB(testCase.TOTAL_K * testCase.TOTAL_N);
-            // A: tile in K-direction with TILE_K (row-major load, stride=TILE_K)
-            TransformMatrixToTiledKfirst(ptrA, testCase.TOTAL_M, testCase.TOTAL_K, tempA.data(), testCase.TILE_K);
-            // B: transpose (K×N → N×K) then tile with TILE_K for col-major shader load (stride=TILE_K).
-            // This ensures stride >= TILE_K bytes regardless of TILE_N, avoiding hardware minimum stride issues.
-            std::vector<T> tempBT(testCase.TOTAL_K * testCase.TOTAL_N);
-            for (uint32_t kk = 0; kk < testCase.TOTAL_K; kk++)
-                for (uint32_t nn = 0; nn < testCase.TOTAL_N; nn++)
-                    tempBT[nn * testCase.TOTAL_K + kk] = ptrB[kk * testCase.TOTAL_N + nn];
-            TransformMatrixToTiledKfirst(tempBT.data(), testCase.TOTAL_N, testCase.TOTAL_K, tempB.data(), testCase.TILE_K);
-            std::memcpy(matrices[MAT_A].ptr, tempA.data(), tempA.size() * sizeof(T));
-            std::memcpy(matrices[MAT_B].ptr, tempB.data(), tempB.size() * sizeof(T));
+
+            if (layoutA_TiledKfirst)
+            {
+                std::vector<T> tempA(testCase.TOTAL_M * testCase.TOTAL_K);
+                TransformMatrixToTiledKfirst(ptrA, testCase.TOTAL_M, testCase.TOTAL_K, tempA.data(), testCase.TILE_K);
+                std::memcpy(matrices[MAT_A].ptr, tempA.data(), tempA.size() * sizeof(T));
+            }
+            else if (layoutA_Mfirst)
+            {
+                std::vector<T> tempA((size_t)matrices[MAT_A].dims.rows * matrices[MAT_A].dims.cols, T{});
+                for (uint32_t mm = 0; mm < testCase.TOTAL_M; ++mm)
+                    for (uint32_t kk = 0; kk < testCase.TOTAL_K; ++kk)
+                        tempA[kk * testCase.strideAinElements + mm] = ptrA[mm * matrices[MAT_A].dims.cols + kk];
+                std::memcpy(matrices[MAT_A].ptr, tempA.data(), tempA.size() * sizeof(T));
+            }
+
+            if (layoutB_TiledKfirst)
+            {
+                std::vector<T> tempB(testCase.TOTAL_K * testCase.TOTAL_N);
+                std::vector<T> tempBT(testCase.TOTAL_K * testCase.TOTAL_N);
+                for (uint32_t kk = 0; kk < testCase.TOTAL_K; kk++)
+                    for (uint32_t nn = 0; nn < testCase.TOTAL_N; nn++)
+                        tempBT[nn * testCase.TOTAL_K + kk] = ptrB[kk * matrices[MAT_B].dims.cols + nn];
+                TransformMatrixToTiledKfirst(tempBT.data(), testCase.TOTAL_N, testCase.TOTAL_K, tempB.data(), testCase.TILE_K);
+                std::memcpy(matrices[MAT_B].ptr, tempB.data(), tempB.size() * sizeof(T));
+            }
+            else if (layoutB_Kfirst)
+            {
+                std::vector<T> tempB((size_t)matrices[MAT_B].dims.rows * matrices[MAT_B].dims.cols, T{});
+                for (uint32_t kk = 0; kk < testCase.TOTAL_K; ++kk)
+                    for (uint32_t nn = 0; nn < testCase.TOTAL_N; ++nn)
+                        tempB[nn * testCase.strideBinElements + kk] = ptrB[kk * matrices[MAT_B].dims.cols + nn];
+                std::memcpy(matrices[MAT_B].ptr, tempB.data(), tempB.size() * sizeof(T));
+            }
         };
 
         if      (test_description.input_type == VK_COMPONENT_TYPE_FLOAT32_KHR) applyTransform((float*)   matrices[MAT_A].ptr, (float*)   matrices[MAT_B].ptr);
@@ -1772,6 +1755,28 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
 
     // Specialize the shader with the matrix sizes, strides, and constants.
     // Also, work-group sizes
+    const uint32_t specDataMxMBasic[] = {
+        local_size_x,
+        local_size_y,
+        local_size_z,
+        testCase.TOTAL_M,
+        testCase.TOTAL_N,
+        testCase.TOTAL_K,
+        testCase.TILE_M,
+        testCase.TILE_N,
+        testCase.TILE_K,
+        testCase.layoutA_Mfirst,
+        testCase.layoutB_Nfirst,
+        testCase.layoutA_TiledKfirst,
+        testCase.layoutB_TiledKfirst,
+        testCase.layoutC_Mfirst,
+        testCase.layoutR_Mfirst,
+        testCase.strideAinElements,
+        testCase.strideBinElements,
+        testCase.strideCinElements,
+        testCase.strideRinElements
+    };
+
     const uint32_t specDataMxM[] = {   // pass to shader_name.comp
         local_size_x,               // layout(constant_id = 0) const uint local_size_x;
         local_size_y,               // layout(constant_id = 1) const uint local_size_y;
@@ -1822,6 +1827,9 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
 
 #define ARRAY_LENGTH(x) (sizeof(x) / sizeof(x[0]))
 
+    VkSpecializationMapEntry entriesMxMBasic[ARRAY_LENGTH(specDataMxMBasic)];
+    fill_specialized_map_entries(entriesMxMBasic, ARRAY_LENGTH(specDataMxMBasic), sizeof(uint32_t));
+
     VkSpecializationMapEntry entriesMxM[ARRAY_LENGTH(specDataMxM)];
     fill_specialized_map_entries(entriesMxM, ARRAY_LENGTH(specDataMxM), sizeof(uint32_t)); // {0,  sizeof(uint32_t) * 0, sizeof(uint32_t)},...,//{end,  sizeof(uint32_t) * end, sizeof(uint32_t)}
 
@@ -1835,6 +1843,8 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
         specInfo = { ARRAY_LENGTH(specDataCONV), entriesCONV, sizeof(specDataCONV), specDataCONV, };
         break;
     case TT_MXM_BASIC:
+        specInfo = { ARRAY_LENGTH(specDataMxMBasic), entriesMxMBasic, sizeof(specDataMxMBasic), specDataMxMBasic, };
+        break;
     case TT_MXM_VecToMat:
         specInfo = { ARRAY_LENGTH(specDataMxM), entriesMxM, sizeof(specDataMxM), specDataMxM, };
         break;
@@ -1958,10 +1968,38 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
 
         test_result.time_total = ms * 1000;
         test_result.TOPS       = static_cast<double>(total_ops) / (ms / 1000.0) / 1e12;
-        const double reference_peak_tops = GetReferencePeakTops(test_description.input_type, test_description.output_type);
-        test_result.percentage = (reference_peak_tops > 0.0)
-            ? ((test_result.TOPS / reference_peak_tops) * 100.0)
-            : 0.0;
+        test_result.percentage = 0.0;
+
+        if (m_show_peak_percentage && tt == TT_MXM_BASIC && m_peak_frequency_mhz > 0.0f)
+        {
+            double peak_at_base_frequency = 0.0;
+            if (test_description.input_type == VK_COMPONENT_TYPE_FLOAT16_KHR)
+            {
+                switch (testCase.TILE_N)
+                {
+                    case 64: peak_at_base_frequency = 11.952012557461599; break;
+                    case 32: peak_at_base_frequency = 8.670843589169836; break;
+                    case 16: peak_at_base_frequency = 5.976315064720463; break;
+                    default: break;
+                }
+            }
+            else if (test_description.input_type == VK_COMPONENT_TYPE_SINT8_KHR)
+            {
+                switch (testCase.TILE_N)
+                {
+                    case 64: peak_at_base_frequency = 0.0; break;
+                    case 32: peak_at_base_frequency = 0.0; break;
+                    case 16: peak_at_base_frequency = 0.0; break;
+                    default: break;
+                }
+            }
+
+            const double peak_tops = peak_at_base_frequency * (static_cast<double>(m_peak_frequency_mhz) / 1025.0);
+            if (peak_tops > 0.0)
+            {
+                test_result.percentage = test_result.TOPS / peak_tops * 100.0;
+            }
+        }
     }
     else
     {
@@ -1973,10 +2011,6 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
         test_result.TOPS       = 0.0;
         test_result.percentage = 0.0;
     }
-
-    test_result.total_m = testCase.TOTAL_M;
-    test_result.total_n = testCase.TOTAL_N;
-    test_result.total_k = testCase.TOTAL_K;
 
     // Upload the result from device memory.
     result = vkBeginCommandBuffer(commandBuffers[2], &commandBufferBeginInfo); // Begin command buffer recording

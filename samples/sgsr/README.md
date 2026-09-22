@@ -1,13 +1,11 @@
-# Snapdragon™ Game Super Resolution Sample
+# Snapdragon™ Game Super Resolution sample
 
-![Screenshot](img/screenshot.png)
+![Snapdragon™ Game Super Resolution sample output](img/screenshot.png)
 
-This sample demonstrates how to use the [Snapdragon™ Game Super Resolution](https://github.com/SnapdragonGameStudios/snapdragon-gsr) and offers a comparison with the traditional *Bilinear Interpolation*.
+Compares [Snapdragon™ Game Super Resolution](https://github.com/SnapdragonGameStudios/snapdragon-gsr) with bilinear upscaling.
 
-- Toggle **SGSR Active** to activate Snapdragon™ GSR
-- Toggle **SGSR Edge Direction** to use an optional edge direction calculation on the SGSR shader that helps reducing banding
+Use **SGSR Active** to switch Snapdragon™ GSR on or off. **SGSR Edge Direction** enables the optional edge-direction calculation used to reduce banding.
 
-## Running
+## Build and run
 
-- If you haven't already, setup the framework and build the code [instructions here](../../README.md#configuring)
-- Running this sample has no special additional requirements [instructions here](../../README.md#running)
+Follow the [framework setup](../../README.md#configuring), select `sgsr`, and build the target platform. Use the [run instructions](../../README.md#running) for installation, working directories, and configuration.

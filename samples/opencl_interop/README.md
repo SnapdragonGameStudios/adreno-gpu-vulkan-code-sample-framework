@@ -1,6 +1,6 @@
-# OpenCL Interop Sample
+# OpenCL interop sample
 
-![Screenshot](img/screenshot.png)
+
 
 This sample demonstrates Vulkan/OpenCL interoperability using external memory and semaphore synchronization.
 
@@ -11,9 +11,9 @@ The sample renders a simple Vulkan scene, shares image or buffer resources with 
 - linear tiling image interop
 - optimal tiling image interop
 
-The optimal image mode demonstrates importing Vulkan optimal tiling images into OpenCL with `CL_EXTERNAL_MEMORY_HANDLE_VULKAN_OPAQUE_FD_QCOM`. **For clarity, this sample keeps explicit Vulkan copies around the shared image resources rather than implementing a full render-target zero-copy path.**
+The optimal image mode demonstrates importing Vulkan optimal tiling images into OpenCL with `CL_EXTERNAL_MEMORY_HANDLE_VULKAN_OPAQUE_FD_QCOM`. The sample uses explicit Vulkan copies around the shared images. It does not implement a render-target zero-copy path.
 
-## OpenCL SDK Headers
+## OpenCL SDK headers
 
 This sample requires Qualcomm OpenCL SDK headers at build time.
 
@@ -47,6 +47,6 @@ samples/opencl_interop/code/open_cl_common/CL/cl_gl.h
 
 ## Running
 
-- If you haven't already, setup the framework and build the code [instructions here](../../README.md#configuring)
+- Configure and build the sample using the [framework instructions](../../README.md#configuring)
 - This sample requires an Android device with OpenCL support and Vulkan/OpenCL external memory interoperability support.
-- Running this sample otherwise follows the standard framework instructions [instructions here](../../README.md#running)
+- Install and run the sample using the [framework instructions](../../README.md#running)

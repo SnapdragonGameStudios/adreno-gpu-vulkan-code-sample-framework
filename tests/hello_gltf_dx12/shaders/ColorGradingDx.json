@@ -1,0 +1,40 @@
+{
+	"$schema": "../../../framework/schema/shaderSchema.json",
+	"Passes": [
+        {
+            "Name": "ColorGrading",
+            "Shaders": {
+                "Compute": "Media/Shaders/ColorGrading.comp.bin"
+            },
+            "DescriptorSets": [
+                {
+                    "Name": "Root",
+                    "Buffers": [
+                        {
+                            "Type": "DescriptorTable",
+                            "Stages": [ "Compute" ],
+                            "Names": [ "Textures" ]
+                        }
+                    ]
+                },
+                {
+                    "Name": "Textures",
+                    "Buffers": [
+                        {
+                            "Type": "ImageSampled",
+                            "Stages": [ "Compute" ],
+                            "Count": 1,
+                            "Names": [ "Input" ]
+                        },
+                        {
+                            "Type": "ImageStorage",
+                            "Stages": [ "Compute" ],
+                            "Count": 1,
+                            "Names": [ "Output" ]
+                        }
+                    ]
+                }
+            ]
+        }
+	]
+}

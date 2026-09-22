@@ -1,12 +1,11 @@
-# Subpass Sample
+# Subpass sample
 
-For mobile tile-based GPUs, subpasses are an important way to save memory bandwidth, improve power efficiency, and help performance.
+![Subpass sample output](project/img/screenshot.png)
 
-This sample demonstrates Vulkan subpasses by optionally running a filmic tonemapping operator as a subpass of the main scene pass. The on-screen UI can enable or disable the subpass path so the impact can be measured with external profiling tools.
+Applies a filmic tonemapping operator either as a subpass of the scene render pass or through a separate path. Use the on-screen control to compare them.
 
-When the subpass path is enabled, the tonemap work can consume the scene color data while it is still tile-local instead of forcing an additional off-chip store and reload. In prior Snapdragon Profiler captures for this sample, enabling the subpass path reduced the number of intermediate surfaces and lowered total read/write bandwidth.
+A subpass can consume an attachment while the data remains in tile memory. Measure bandwidth and frame time on the target device; results depend on the workload and driver.
 
-## Running
+## Build and run
 
-- If you haven't already, setup the framework and build the code [instructions here](../../README.md#configuring)
-- Running this sample has no special additional requirements [instructions here](../../README.md#running)
+Follow the [framework setup](../../README.md#configuring), select `sub_pass`, and build the target platform. Use the [run instructions](../../README.md#running) for installation, working directories, and configuration.

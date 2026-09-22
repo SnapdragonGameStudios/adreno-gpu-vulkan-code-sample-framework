@@ -1,2 +1,1 @@
-Place loose arm64 .lib files here
-
+Place additional Windows ARM64 .lib files required by your local build in this directory.

@@ -1,18 +1,11 @@
-# Tile Shading Sample
+# Tile shading sample
 
-![Screenshot](img/screenshot.png)
+![Tile shading sample output](img/screenshot.png)
 
-This sample demonstrates a tile-based shading technique using Vulkan, with support for the *[VK_QCOM_tile_memory_heap](https://docs.vulkan.org/refpages/latest/refpages/source/VK_QCOM_tile_memory_heap.html)* extension.
+Uses the Qualcomm™ extension `VK_QCOM_tile_shading` to perform rendering work within a tile-based render pass on supported Adreno™ GPUs.
 
-The extension enables the application to allocate and manage tile-local memory, which is scoped to the duration of a command buffer submission and optimized for high-bandwidth, low-latency access within a tile.
+Inspect extension setup and render-pass dependencies when following this path. It requires compatible hardware and driver support on the target Snapdragon™ platform. Tile shading and the separate `VK_QCOM_tile_memory_heap` sample demonstrate different Vulkan features.
 
-The sample implements a forward rendering pipeline where shading computations are performed per tile, rather than per pixel or per fragment. This approach leverages the tiling architecture of Adreno™ GPUs to reduce memory traffic and improve cache efficiency.
+## Build and run
 
-By using tile memory, the sample avoids costly round-trips to global memory for intermediate shading data. Instead, lighting calculations and material evaluations are performed directly in tile-local memory, which is faster and more power-efficient.
-
-The technique is particularly well-suited for mobile GPUs, where bandwidth and power are constrained. It demonstrates how Vulkan applications can take advantage of Qualcomm™-specific extensions to optimize rendering workloads and achieve better performance on Snapdragon™ platforms.
-
-## Running
-
-- If you haven't already, setup the framework and build the code [instructions here](../../README.md#configuring)
-- Running this sample has no special additional requirements [instructions here](../../README.md#running)
+Follow the [framework setup](../../README.md#configuring), select `tile_shading`, and build the target platform. Use the [run instructions](../../README.md#running) for installation, working directories, and configuration.

@@ -10,6 +10,7 @@
 #include "main/applicationHelperBase.hpp"
 #include "memory/vulkan/uniform.hpp"
 #include "vulkan/commandBuffer.hpp"
+#include <string>
 #include <unordered_map>
 
 #include "ml/GraphPipelineTypes.hpp"
@@ -240,6 +241,7 @@ private:
 
     // Graph Pipelines
     bool                            m_IsGraphPipelinesSupported = false; // Enables/disable the whole graph pipeline functionality
+    std::string                     m_GraphPipelinesStatusMessage;
     Ml::GraphPipelineTensor         m_InputTensor;
     Ml::GraphPipelineTensor         m_OutputTensor;
     GraphPipelineInstance           m_GraphPipelineInstance;

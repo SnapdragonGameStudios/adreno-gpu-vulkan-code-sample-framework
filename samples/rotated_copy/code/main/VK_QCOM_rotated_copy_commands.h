@@ -1,3 +1,6 @@
+// Copyright (c) Qualcomm Innovation Center, Inc. All rights reserved.
+// SPDX-License-Identifier: BSD-3-Clause
+
 #pragma once
 #ifndef _VULKAN_VK_QCOM_ROTATED_COPY_H_
 #define _VULKAN_VK_QCOM_ROTATED_COPY_H_

@@ -1,45 +1,27 @@
-# Graph Pipelines Sample
+# Graph pipelines sample
 
-![Screenshot](img/screenshot.png)
+Runs an image-processing workload through Vulkan data-graph pipelines using `VK_ARM_tensors`, `VK_ARM_data_graph`, and `VK_QCOM_data_graph_model`. The graph path requires compatible device and driver support.
 
-This sample demonstrates the use of **Vulkan Graph Pipelines (Data Graph)** to execute a compute graph as a first‑class pipeline within a Vulkan application.
+## Execution flow
 
-The goal of the sample is to show how graph‑based workloads (such as ML inference) can be created, bound, and dispatched using Vulkan’s data‑graph pipeline model.
+1. Load the precompiled model pipeline cache and create the data-graph pipeline.
+2. Create a pipeline session.
+3. Query session memory requirements, allocate memory, and bind it.
+4. Bind the graph pipeline and descriptors in a command buffer.
+5. Dispatch the graph and synchronize its output before use.
 
-Uses the *[VK_QCOM_data_graph_model](https://docs.vulkan.org/refpages/latest/refpages/source/VK_QCOM_data_graph_model.html)* and *[VK_ARM_data_graph](https://docs.vulkan.org/refpages/latest/refpages/source/VK_ARM_data_graph.html)* extensions.
+## Model pipeline cache
 
----
+The graph path needs a `PipelineCache.bin` generated for the model and target driver with a compatible model compiler. The framework build does not generate this cache from an ONNX model.
 
-## What This Sample Shows
+Place the file at:
 
-The sample focuses on the core mechanics required to run a data‑graph workload:
+```text
+samples/graph_pipelines/Media/Misc/PipelineCache.bin
+```
 
-- Creating a **data‑graph pipeline** using an identifier‑based creation path
-- Creating a **pipeline session** associated with the graph
-- Querying session memory requirements and explicitly allocating and binding device memory
-- Recording a graph dispatch inside a Vulkan command buffer
-- Submitting the dispatch to a Vulkan queue using standard synchronization primitives
+If the cache is missing, invalid, or cannot be loaded, the sample keeps rendering with graph upscaling disabled and shows a warning. Supply a valid cache, rebuild the package, and run again to enable graph dispatch.
 
-The code intentionally avoids higher‑level abstractions in order to clearly expose the Vulkan objects and flow involved.
+## Build and run
 
----
-
-## High‑Level Flow
-
-At a high level, the sample follows this sequence:
-
-1. Create a data‑graph pipeline (from a precompiled graph identifier or cache data)
-2. Create a pipeline session for runtime execution
-3. Query session bind requirements and allocate required memory
-4. Bind allocated memory to the session
-5. Record commands:
-   - Bind the graph pipeline and descriptor set
-   - Dispatch the graph
-6. Submit the command buffer to a queue
-
-This mirrors how graph execution would typically be integrated into a frame graph or task system.
-
-## Running
-
-- If you haven't already, setup the framework and build the code [instructions here](../../README.md#configuring)
-- Running this sample has no special additional requirements [instructions here](../../README.md#running)
+Follow the [framework setup](../../README.md#configuring), select `graph_pipelines`, and build for the target device. See the [run instructions](../../README.md#running).

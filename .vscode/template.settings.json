@@ -1,0 +1,14 @@
+{
+    "cmake.sourceDirectory": "${workspaceFolder}/project/windows",
+    "cmake.buildDirectory": "${workspaceFolder}/project/windows/solution",
+    "cmake.debugConfig": {
+        "type": "cppvsdbg", // This can be changed to whatever debugger you need
+        "request": "launch",
+        "args": [
+            "-console"
+        ],
+        "cwd": "${workspaceFolder}/samples/${command:cmake.launchTargetName}",
+        "console": "integratedTerminal",
+        "stopAtEntry": false
+    }
+}

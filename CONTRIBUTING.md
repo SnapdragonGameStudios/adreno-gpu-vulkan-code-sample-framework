@@ -1,25 +1,25 @@
-## Contributing to the Adreno™ GPU Vulkan Code Sample Framework
+# Contributing to the Adreno™ GPU Vulkan code sample framework
 
-Hi there!
-We’re thrilled that you’d like to contribute to this project.
-Your help is essential for keeping this project great and for making it better.
+Use issues to report a reproducible problem and pull requests to propose a focused change. Read the [code of conduct](CODE-OF-CONDUCT.md) and [license](LICENSE.txt).
 
-## Branching Strategy
+## Report a problem
 
-In general, contributors should develop on branches based off of `main` and pull requests should be made against `main`.
+Include the sample, repository revision, build command, platform, device and driver version, expected result, and observed result. Add relevant logs without credentials, private paths, or proprietary content.
 
-## Submitting a pull request
+## Prepare a change
 
-1. Please read our [code of conduct](CODE-OF-CONDUCT.md) and [license](LICENSE.txt).
-2. Fork and clone the repository.
-3. Create a new branch based on `main`: `git checkout -b <my-branch-name> main`.
-4. Make your changes, and test build and runtime on an Android device.
-5. Commit your changes using the [DCO](http://developercertificate.org/). You can attest to the DCO by commiting with the **-s** or **--signoff** options or manually adding the "Signed-off-by".
-6. Push to your fork and [submit a pull request](https://github.com/SnapdragonGameStudios/adreno-gpu-vulkan-code-sample-framework/pulls) from your branch to `main`.
-7. Pat yourself on the back and wait for your pull request to be reviewed.
+1. Create a branch based on `main`.
+2. Keep the change focused on the reported problem or feature.
+3. Build the affected samples and test on an Android device when the change affects Android. For shared framework changes, run an existing test application too.
+4. Update affected sample and test guides when behavior, requirements, controls, or build steps change.
+5. Include commands and results in the pull request. State which platforms or devices were not tested.
 
-Here are a few things you can do that will increase the likelihood of your pull request to be accepted:
+## Submit a pull request
 
-- Keep your change as focused as possible.
-  If you want to make multiple independent changes, please consider submitting them as separate pull requests.
-- Write a [good commit message](http://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html).
+Commit with a [Developer Certificate of Origin](https://developercertificate.org/) sign-off using `git commit --signoff`. Open a pull request against `main` and describe the problem, resulting behavior, validation, and compatibility impact.
+
+Preserve copyright notices and component-specific licenses. Do not include generated output, local configuration, private SDKs, or assets without redistribution rights.
+
+## Documentation
+
+Use sentence-case headings, short paragraphs, and direct instructions. Format API names, paths, commands, and configuration keys with backticks. Explain required settings and the failure caused by an incorrect value. Link shared setup instructions instead of repeating them in every sample.

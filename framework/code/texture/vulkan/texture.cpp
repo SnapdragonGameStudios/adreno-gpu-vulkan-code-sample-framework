@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+
 //=============================================================================
 //
 //                  Copyright (c) 2022 QUALCOMM Technologies Inc.
@@ -74,6 +76,7 @@ Texture<Vulkan>& Texture<Vulkan>::operator=(Texture<Vulkan>&& other) noexcept
         Format = other.Format;
         ImageLayout = other.ImageLayout;
         ClearValue = other.ClearValue;
+        Properties = other.Properties;
         // Actually transfer ownership from 'other'
         Image = std::move(other.Image);
         Sampler = std::move(other.Sampler);
@@ -503,6 +506,15 @@ Texture<Vulkan> CreateTextureObject<Vulkan>(Vulkan& vulkan, const CreateTexObjec
         ImageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
         ImageInfo.samples = (VkSampleCountFlagBits)texInfo.Msaa;
         break;
+    case TT_RENDER_TARGET_WITH_STORAGE_TRANSFERSRC:
+        ImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        assert(texInfo.Msaa == Msaa::Samples1 && texInfo.Format != TextureFormat::R8G8B8A8_SRGB);
+        ImageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
+                        | VK_IMAGE_USAGE_SAMPLED_BIT
+                        | VK_IMAGE_USAGE_STORAGE_BIT
+                        | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        ImageInfo.samples = (VkSampleCountFlagBits)texInfo.Msaa;
+        break;
     case TT_RENDER_TARGET_SAMPLED_TRANSFERSRC:
         ImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
         ImageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
@@ -525,7 +537,7 @@ Texture<Vulkan> CreateTextureObject<Vulkan>(Vulkan& vulkan, const CreateTexObjec
         break;
     case TT_COMPUTE_TARGET:
         ImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-        ImageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT;// | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        ImageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
         break;
     case TT_COMPUTE_STORAGE:
         ImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
@@ -537,7 +549,7 @@ Texture<Vulkan> CreateTextureObject<Vulkan>(Vulkan& vulkan, const CreateTexObjec
         ImageInfo.arrayLayers = 1;
         ImageInfo.samples = (VkSampleCountFlagBits)texInfo.Msaa;
         ImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-        ImageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT /*| VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT*/;
+        ImageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT /*| VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT*/;
         if (texInfo.Msaa != Msaa::Samples1)
             ImageInfo.flags |= VK_IMAGE_CREATE_SAMPLE_LOCATIONS_COMPATIBLE_DEPTH_BIT_EXT;
         break;
@@ -606,6 +618,10 @@ Texture<Vulkan> CreateTextureObject<Vulkan>(Vulkan& vulkan, const CreateTexObjec
         retImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         break;
     case TT_RENDER_TARGET_TRANSFERSRC:
+        vulkan.SetImageLayout(vmaImage.GetVkBuffer(), SetupCmdBuffer, VK_IMAGE_ASPECT_COLOR_BIT, ImageInfo.initialLayout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, (VkPipelineStageFlags)0/*unused param*/, (VkPipelineStageFlags)0/*unused param*/, 0, 1, 0, 1);
+        retImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        break;
+    case TT_RENDER_TARGET_WITH_STORAGE_TRANSFERSRC:
         vulkan.SetImageLayout(vmaImage.GetVkBuffer(), SetupCmdBuffer, VK_IMAGE_ASPECT_COLOR_BIT, ImageInfo.initialLayout, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, (VkPipelineStageFlags)0/*unused param*/, (VkPipelineStageFlags)0/*unused param*/, 0, 1, 0, 1);
         retImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
         break;
@@ -691,6 +707,7 @@ Texture<Vulkan> CreateTextureObject<Vulkan>(Vulkan& vulkan, const CreateTexObjec
     case TT_RENDER_TARGET:
     case TT_RENDER_TARGET_WITH_STORAGE:
     case TT_RENDER_TARGET_TRANSFERSRC:
+    case TT_RENDER_TARGET_WITH_STORAGE_TRANSFERSRC:
     case TT_RENDER_TARGET_SAMPLED_TRANSFERSRC:
     case TT_RENDER_TARGET_SAMPLED_TRANSFERDST:
     case TT_RENDER_TARGET_SUBPASS:
@@ -740,7 +757,28 @@ Texture<Vulkan> CreateTextureObject<Vulkan>(Vulkan& vulkan, const CreateTexObjec
         return {};
     }
 
-    return{ texInfo.uiWidth, texInfo.uiHeight, texInfo.uiDepth, texInfo.uiMips, 0/*first mip*/, texInfo.uiFaces, 0/*first face*/, texInfo.Format, retImageLayout, retClearValue, std::move(Image), std::move(Sampler), std::move(ImageView)};
+    Texture<Vulkan> texture{
+        texInfo.uiWidth,
+        texInfo.uiHeight,
+        texInfo.uiDepth,
+        texInfo.uiMips,
+        0/*first mip*/,
+        texInfo.uiFaces,
+        0/*first face*/,
+        texInfo.Format,
+        retImageLayout,
+        retClearValue,
+        std::move(Image),
+        std::move(Sampler),
+        std::move(ImageView)};
+    texture.SetProperties(TextureVulkanProperties{
+        .Usage       = ImageInfo.usage,
+        .Tiling      = ImageInfo.tiling,
+        .Samples     = ImageInfo.samples,
+        .CreateFlags = ImageInfo.flags,
+        .AspectMask  = ImageViewInfo.subresourceRange.aspectMask,
+        .TextureType = texInfo.TexType});
+    return texture;
 }
 
 

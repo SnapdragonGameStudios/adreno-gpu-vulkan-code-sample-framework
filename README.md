@@ -1,109 +1,118 @@
-# Vulkan Sample Framework
+# Adreno™ GPU Vulkan code sample framework
 
-The Adreno™ GPU Vulkan Code Sample Framework is a lightweight collection of C++ classes and sample projects to demonstrate Vulkan rendering features on the Qualcomm Snapdragon Adreno™ GPU.
+The framework provides C++ components and sample applications for Vulkan rendering on Adreno™ GPUs. It supports Windows and Android build targets. Individual samples may require device-specific Vulkan extensions, SDKs, or driver support.
 
-Both Android and Microsoft Windows build targets are supported (some samples may require/target Qualcomm Adreno™ specific Vulkan extensions).
+## Contents
 
-## Prerequisites
+- [Resources](#resources)
+- [Requirements](#requirements)
+- [Configuring](#configuring)
+- [Building](#building)
+- [Running](#running)
+- [Repository layout](#repository-layout)
+- [Contributing](#contributing)
+- [License](#license)
 
-- Git https://git-scm.com/downloads
-- Python (tested against 3.10.9)
-- CMake (tested against 3.30+) https://cmake.org/download/
-- Vulkan SDK (1.3 or later) https://vulkan.lunarg.com/
+## Resources
 
-### Windows
+| Resource | Use it for |
+|---|---|
+| [Samples](samples/README.md) | Choosing a rendering or compute example |
+| [Framework](framework/README.md) | Understanding the application entry point and shared components |
+| [Test applications](tests/README.md) | Checking a build or starting a small application |
 
-- Visual Studio 2022
+## Requirements
 
-### Android
+Install Git, Python, CMake, and the [Vulkan SDK](https://vulkan.lunarg.com/). Put Python and CMake on `PATH`. The existing setup has used Python 3.10.9 and CMake 3.30 or newer. Use a Vulkan SDK that supplies the extensions required by the selected sample.
 
-- Android Studio (install NDK and SDK)
-- Ninja https://github.com/ninja-build/ninja/releases <br>
-    After installation ninja.exe should be copied in to the same directory as cmake.exe - this works around a current [July2022] open bug with gradle where it expects ninja to be in the same directory as cmake!)
-- Java JDK<br>
-    Ensure JAVA_HOME environment variable points to a current version of Java.  While a 'standalone' Java can be used it is highly recommended to use the Java build shipped inside Android Studio as the Android build system and gradle are very sensitive to Java versions.  Eg. `set JAVA_HOME=c:\Program Files\Android\Android Studio\jbr`
+| Target | Additional requirements |
+|---|---|
+| Windows | Visual Studio with C++ build tools. Scripts detect Visual Studio 2019, 2022, or 2026. Use a CMake version that supports the selected generator. |
+| Android | Android SDK, NDK, Java JDK, Ninja, and an `arm64-v8a` device with the required Vulkan capabilities. Gradle currently selects NDK `26.0.10792818`. |
+| Linux | CMake and a compatible C++/Vulkan environment. Linux support has been exercised under WSL; inspect `project/linux/` for its build configuration. |
 
-### Linux
+For Android, use the Java runtime required by the selected Android Gradle Plugin. Set `JAVA_HOME` to that installation. A compatible Android Studio installation includes a suitable Java runtime.
 
-Tested using WSL running Ubuntu, but convienience scripts are not available.
+If Gradle cannot locate the Android SDK or CMake, create `project/android/local.properties` with paths for your machine:
 
+```properties
+sdk.dir=C:/Android/Sdk
+cmake.dir=C:/Tools/CMake
+```
 
-## Build Setup
-
-### Windows
-
-Ensure CMake and python are in the Windows PATH
-
-### Android
-
-Ensure you have CMake and a recent version of Android SDK installed (Android Studio can install both).
-Android builds require CMake version 3.25 and above, if when building Android projects gradle is throwing arrors about cmake or Android SDK/NDK versions you can override the defaults by creating `project/android/local.properties` and adding the location of your local Android SDK and Cmake installs eg:
-<pre><code>sdk.dir=C\:\\Users\\yournamehere\\AppData\\Local\\Android\\Sdk
-cmake.dir=c\:\\Program Files\\CMake</code></pre>
-
+The Android configuration requires CMake 3.25 or newer. Keep local paths out of source control.
 
 ## Configuring
 
-In the root folder run the configuration/build script:
-`01_Configure.bat` (source `01_Configure.sh` on Linux)
+From the repository root, run:
 
-Select the build targets and solutions you are interested in building (sub-menus can be opened with the 'right' arrow).
-Then select 'Save And Begin Processing' which:
-- saves your selections.
-- creates configuration files for building (`ConfigLocal.cmake` / `ConfigLocal.properties`).
-- cleans any previous builds (if targets to clean are selected)
-- downloads any external project dependencies (eg tinygltfloader, glm, KTX-Software).
-- runs project\tools\build.bat to build tools required for building.
-- runs project\windows\build.bat and/or buildArm64.bat (if windows target is selected)
-	- which creates the MSVC solution containing your selected projects; project\windows\solution\SampleFramework.sln
-	- attempts to build this solution for both debug and release.
-- runs project\android\build.bat (if Android target is selected)
-	- which runs gradle to build the apk targets for your selected projects.
+```powershell
+python Configure.py
+```
 
-## Subsequent builds
+On Windows, `01_Configure.bat` runs the same command. The shell wrapper is `01_Configure.sh`.
 
-01_Configure.bat can be used to re-run builds after changes.
+Select the samples or tests and target platforms. Expand a submenu with the right-arrow key. Keep required dependencies and the Tools target selected, then choose **Save And Begin Processing**.
 
-Alternately the Windows solution can be used to make changes and re-build Windows targets
-	- project\windows\solution\SampleFramework.sln
-	- project\windowsArm64\solution\SampleFramework.sln
-and Android builds can be re-ran with
-	- project\android\build.bat
+The script saves the selection in `ConfigLocal.*`, downloads dependencies, builds asset tools, generates platform projects, and starts the selected builds. Samples and dependencies differ by branch; `Config.txt` defines the available choices.
 
-If desired you can also open/build the SampleFramework using Android Studio.  In Android Studio open the project/android folder (initial load of the projects takes a while, subsequent opens are fast).  Using Android Studio to build is untested and not supported!  If you are having problems building framework samples please test using the batch file build scripts before opening any support requests.
+Check the [sample guides](samples/README.md) for dependencies that require a separate download or setup step.
 
-Additionally VSCode can be used to build and debug the framework and samples on windows (configuration for android builds not provided). Open the root project framework folder in VSCode with the `ms-vscode.cmake-tools` extension installed, rename the `.vscode/template.settings.json` to `.vscode/settings.json`. After running the configure script, you should be able to use the CMake extension to rebuild and debug the samples. Like using Android Studio, using VSCode to build and debug is untested and not supported!  If you are having problems building framework samples please test using the batch file build scripts before opening any support requests.
+## Building
+
+Rebuild the saved selection from the repository root:
+
+```powershell
+python Configure.py --build
+```
+
+The equivalent wrappers are `02_Build.bat` and `02_Build.sh`.
+
+Windows scripts generate `SampleFramework.sln` under `project/windows/solution/` or the selected architecture's solution directory. The default Windows batch build uses Debug. Build other configurations from the generated solution.
+
+For example, rebuild the `empty` test after selecting it in the configuration:
+
+```powershell
+.\project\android\build.bat empty
+```
+
+Replace `empty` with the selected sample or test target. Calling the script without a name builds all configured Android targets.
+
+Android Studio can open `project/android`, and VS Code can use the supplied CMake settings template. Reproduce IDE build failures with the repository scripts before reporting them.
 
 ## Running
 
-See the [Samples](samples) folder for instructions on building assets and running individual samples.
-
-Most samples also support a configuration file (`app_config.txt`) placed in the base of the sample's directory (Windows) or pushed loose to the sample's install folder (Android).
-
 ### Android
 
-Android apk are written to `build\android\<samplename>\outputs\apk\debug\`.
-Config files may be pushed to the device using the `sample/<samplename>/install_config.bat` script provided, if available.
-Most sample apks can be installed with the `sample/<samplename>/install_apk.bat` script provided, if available.
-If the Android apk was correctly built it can be installed with `apk install <apk>` and run from Android.
+Debug APKs are written to `build/android/<target>/outputs/apk/debug/`. Use the target's `install_apk.bat` when supplied, or install the APK with `adb`:
+
+```powershell
+adb install -r build/android/empty/outputs/apk/debug/empty-debug.apk
+```
+
+Enable USB debugging and select the intended device before installing. Use the target's `install_config.bat` to copy `app_config.txt` when supplied.
 
 ### Windows
 
-Executables are written to `project\windows\solution\samples\<samplename>\debug\` or `project\windowsArm64\solution\samples\<samplename>\debug\`.
-When running sample executables from command line ensure you are running from the relevant sample directory (not the location of the built exe).  The Visual Studio solution is already configured to launch samples from the correct directory.
+Run each executable with its sample or test directory as the working directory so it can locate assets and configuration. Generated Visual Studio projects set that directory. Executables are under the solution's `samples/<target>/<configuration>/` or `tests/<target>/<configuration>/` directory.
 
-## Directory Structure
+Some samples read an optional `app_config.txt`. Use the settings documented by that sample.
 
-- [/framework](framework)
-Contains the sample framework code.
-- [/framework/external](framework/external)
-Contains external projects downloaded and extracted by Configure.py
-- [/project](project)
-Platform specific top level build files and build tools.
-- [/samples](samples)
-Samples that use the framework.
-- [/samples/external](samples/external)
-External projects shared between samples, downloaded and extracted by Configure.py
+## Repository layout
+
+| Path | Contents |
+|---|---|
+| `framework/` | Shared application, rendering, resource, and platform code |
+| `samples/` | Rendering and compute examples |
+| `tests/` | Small framework test applications |
+| `project/` | Platform builds, asset tools, and CMake helpers |
+| `Config.txt` | Selectable targets and dependency downloads |
+| `framework/external/`, `samples/external/` | Downloaded dependencies |
+
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for validation and sign-off requirements. Participation follows the [code of conduct](CODE-OF-CONDUCT.md).
 
 ## License
-Adreno™ GPU Vulkan Code Sample Framework is licensed under the BSD 3-clause “New” or “Revised” License. Check out the [LICENSE](LICENSE) for more details.
+
+The Adreno™ GPU Vulkan framework source uses the [BSD 3-Clause License](LICENSE.txt). Bundled dependencies, sample SDKs, and media may have separate terms. Preserve their licenses and attribution.

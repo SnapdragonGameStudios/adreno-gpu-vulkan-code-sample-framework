@@ -1,0 +1,70 @@
+{
+	"$schema": "../../../framework/schema/shaderSchema.json",
+	"Passes": [
+        {
+            "Name": "RP_BLIT",
+            "Shaders": {
+                "Vertex": "Media/Shaders/Blit.vert.spv",
+                "Fragment": "Media/Shaders/Blit.frag.spv"
+            },
+            "DescriptorSets": [
+                {
+                    "Name": "Textures",
+                    "Buffers": [
+                        {
+                            "Type": "ImageSampler",
+                            "Stages": [ "Fragment" ],
+                            "Count": 1,
+                            "Names": [ "Diffuse" ]
+                        },
+                        {
+                            "Type": "ImageSampler",
+                            "Stages": [ "Fragment" ],
+                            "Count": 1,
+                            "Names": [ "Overlay" ]
+                        }
+                    ]
+                }
+            ],
+            "FixedFunction": {
+            },
+            "Outputs": [
+                { "BlendEnable": false }
+            ],
+            "VertexBindings": [ "VB0" ]
+        }
+	],
+	"Vertex": [
+		{
+			"Span": 60,
+			"Name": "VB0",
+			"Elements": [
+				{
+					"Name": "POSITION",
+					"Offset": 0,
+					"Type": "Vec3"
+				},
+				{
+					"Name": "NORMAL",
+					"Offset": 12,
+					"Type": "Vec3"
+				},
+                {
+                    "Name": "TEXCOORD",
+                    "Offset": 24,
+                    "Type": "Vec2"
+                },
+				{
+					"Name": "COLOR",
+					"Offset": 32,
+					"Type": "Vec4"
+				},
+				{
+					"Name": "TANGENT",
+					"Offset": 48,
+					"Type": "Vec3"
+				}
+			]
+		}
+	]
+}

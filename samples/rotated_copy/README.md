@@ -1,13 +1,11 @@
-# VK_QCOM_rotated_copy_commands Extension Sample
+# Rotated copy sample
 
-![Screenshot](img/screenshot.png)
+![Rotated copy sample output](img/screenshot.png)
 
-Sample to initialize and use the 
-*[VK_QCOM_rotated_copy_commands](https://docs.vulkan.org/refpages/latest/refpages/source/VK_QCOM_rotated_copy_commands.html)* Vulkan extension.
+Uses `VK_QCOM_rotated_copy_commands` and `VK_KHR_copy_commands2` to copy an intermediate render target into the framebuffer with the device's display rotation.
 
-This extension adds rotated copy capabilities to older devices (where rotated swapchain alternative wasn't available).
+The rotated copy path can avoid a separate display-composition rotation. It requires corresponding Vulkan extension support.
 
-## Running
+## Build and run
 
-- If you haven't already, setup the framework and build the code [instructions here](../../README.md#configuring)
-- Running this sample has no special additional requirements [instructions here](../../README.md#running)
+Follow the [framework setup](../../README.md#configuring), select `rotated_copy`, and build the target platform. Use the [run instructions](../../README.md#running) for installation, working directories, and configuration.

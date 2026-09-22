@@ -1,14 +1,11 @@
-# HDR Swapchain
+# HDR swapchain sample
 
-![Screenshot](img/screenshot.png)
+![HDR swapchain sample output](img/screenshot.png)
 
-This sample demonstrates creating and presenting to an **HDR‑capable Vulkan swapchain**, showing how to select HDR formats/color spaces, render in HDR, and present with correct metadata for wide‑gamut, high‑luminance displays.
+Queries surface formats and color spaces and presents a scene through an HDR-capable Vulkan swapchain. On Adreno™ GPUs and other supported devices, an HDR display and supported surface format are required to inspect the HDR path.
 
-The app queries the surface for supported HDR formats and color spaces, builds an HDR swapchain, and renders with appropriate transfer functions and output transforms. If HDR is unavailable, it falls back to an SDR swapchain while preserving visual consistency across devices, including Adreno™ GPUs.
+The sample also uses `VK_QCOM_render_pass_transform` when available. Check the selected swapchain format and color space when comparing displays.
 
-Uses the *[VK_QCOM_render_pass_transform](https://docs.vulkan.org/refpages/latest/refpages/source/VK_QCOM_render_pass_transform.html)* extension, if available.
+## Build and run
 
-## Running
-
-- If you haven't already, setup the framework and build the code [instructions here](../../README.md#configuring)
-- Running this sample has no special additional requirements [instructions here](../../README.md#running)
+Follow the [framework setup](../../README.md#configuring), select `hdr_swapchain`, and build the target platform. Use the [run instructions](../../README.md#running) for installation, working directories, and configuration.

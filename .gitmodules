@@ -1,0 +1,4 @@
+[submodule "samples/application/Media/Objects/Sponza"]
+	path = samples/application/Media/Objects/Sponza
+	url = https://github.com/jimmiebergmann/Sponza
+        shallow = true

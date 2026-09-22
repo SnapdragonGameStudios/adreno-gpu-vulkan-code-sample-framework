@@ -1,8 +1,9 @@
-# Framework Test (Vulkan) Sample
+# Vulkan framework test
 
-Loads a simple gltf model and texture and draws it on the screen using Vulkan API.
+Loads a glTF model and texture and renders them with Vulkan.
 
-## Running
+## Build and run
 
-- If you haven't already, setup the framework and build the code [instructions here](../../README.md#configuring)
-- Running this sample has no special additional requirements [instructions here](../../README.md#running)
+Follow the [framework configuration instructions](../../README.md#configuring), select `framework_test_vulkan`, and build for Windows and Android. Follow the [run instructions](../../README.md#running).
+
+When creating a new target from this test, update its CMake project name and add its selection to `Config.txt`. Run Windows executables with the test directory as the working directory.

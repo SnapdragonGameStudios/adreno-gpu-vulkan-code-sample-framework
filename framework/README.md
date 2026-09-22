@@ -1,40 +1,25 @@
-## Framework
+# Framework
 
-The framework folder contains the framework that is shared amongst the sample applications.
+The framework provides shared application setup and teardown, platform events, rendering helpers, and resource management.
 
-It handles basic app setup/teardown and provides a library of components that may be used by the samples. 
-Ideally each sample should only have to implement the specific functionality it is demoing and no boiler-plate code.
+A sample links the relevant framework library and implements `Application_ConstructApplication()`. It returns an application derived from `FrameworkApplicationBase` or an existing application helper.
 
-To use the framework a sample app should statically link against framework and implement one function (that the framework calls into):
-<pre><code>FrameworkApplicationBase* Application_ConstructApplication()
-</pre></code>
-The application should create its own base class derived from FrameworkApplicationBase to handle whatever functionality it needs.
-
-The framework attempts to abstract away any platform specific code (such as input/event handling etc) through the FrameworkApplicationBase class.
-
-Eg a simple Vulkan app would be:
-<pre><code>class Application : public FrameworkApplicationBase
+```cpp
+class Application : public FrameworkApplicationBase
 {
 public:
     Application();
     ~Application() override;
-
-private:
-    std::unique_ptr<Vulkan> m_vulkan;
 };
 
 FrameworkApplicationBase* Application_ConstructApplication()
 {
     return new Application();
 }
+```
 
-Application::Application() : FrameworkApplicationBase()
-{
-    m_vulkan = std::make_unique<Vulkan>();
-    assert( !m_vulkan->Init() );
-}
+Use an existing [test application](../tests/README.md) to see initialization, rendering, and teardown in context. Keep sample-specific rendering in the sample and reusable behavior in the relevant framework component.
 
-Application::~Application()
-{
-}
-</pre></code>
+When adding a target, supply its `CMakeLists.txt` and register its selection in `Config.txt`. Copying a folder alone does not enable it.
+
+See the [root build instructions](../README.md#configuring) for targets and dependency setup.

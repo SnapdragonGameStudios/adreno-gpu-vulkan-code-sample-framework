@@ -1,5 +1,8 @@
 tests\
         empty; framework\base
+        dx12; framework\dx12
+                framework_test_dx12
+                hello_gltf_dx12
         vulkan; framework\vulkan
                 framework_test_vulkan
                 hello_gltf_vulkan
@@ -17,13 +20,16 @@ samples\
 			sgsr
 			sgsr2
 		others
+			anf; samples\external\anf_sdk
 			hdr_swapchain
 			rotated_copy
 			sub_pass
 	external\
+		anf_sdk @ https://github.com/SnapdragonGameStudios/adreno-neural-fusion/archive/refs/heads/main.zip
 framework\
 	base; framework\external\GameSampleAssets, framework\external\glm, framework\external\tinyobjloader, framework\external\tinygltf, framework\external\json, framework\external\eigen
 	generic; framework\base, framework\external\imgui, framework\external\implot, framework\external\portable-file-dialogs, framework\external\KTX-Software, Tools
+	dx12; framework\generic, framework\external\D3D12MemoryAllocator
 	vulkan; framework\generic, framework\external\volk, framework\external\SPIRV-Cross, framework\external\glslang, framework\external\half, framework\external\slang, framework\external\VulkanMemoryAllocator, framework\external\Vulkan-Headers
 	external\
 			VulkanMemoryAllocator @ https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/archive/refs/tags/v3.0.1.tar.gz MD5:8571f3def0ff86f228e2864c907ba0b3

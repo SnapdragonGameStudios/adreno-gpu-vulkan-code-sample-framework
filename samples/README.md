@@ -1,36 +1,19 @@
 # Samples
 
-Unless noted, all samples run on Windows and Android.
+Select a sample in the [framework configuration tool](../README.md#configuring). Check its guide for required extensions, SDKs, assets, and platforms. Build-target availability does not guarantee hardware support.
 
-## [Cooperative Matrix](cooperative_matrix)
-Demonstrates **VK_KHR_cooperative_matrix** for high-throughput matrix operations such as GEMM and convolution on Adreno GPUs.
-
-## [Fully Fused MLP](fully_fused_mlp)
-Runs a fully fused multi-layer perceptron forward pass as a Vulkan compute workload, with ALU, cooperative-matrix, and unfused baseline modes.
-
-## [Graph Pipelines](graph_pipelines)
-Shows how to use **VK_ARM_tensors**, **VK_ARM_data_graph**, and **VK_QCOM_data_graph_model** to run ML-backed image processing using Vulkan Data Graph pipelines.
-
-## [HDR Swapchain](hdr_swapchain)
-Creates and presents to an **HDR-capable** Vulkan swapchain, selecting HDR formats/color spaces and falling back to SDR when needed.
-
-## [Image Processing](image_processing)
-Implements a bloom effect using **VK_QCOM_image_processing**, with a toggle to compare the extension path against a standard downsample/blur pipeline.
-
-## [Rotated Copy](rotated_copy)
-Demonstrates **VK_QCOM_rotated_copy_commands** to perform rotated image copies on devices without rotated-swapchain support.
-
-## [SGSR](sgsr)
-Integrates **Snapdragon Game Super Resolution**, with toggles for activation and optional edge-direction processing.
-
-## [SGSR 2](sgsr2)
-Showcases **Snapdragon Game Super Resolution 2**, featuring the temporal upscaling compute 3-pass variant optimized for Adreno.
-
-## [Sub Pass](sub_pass)
-Highlights multi-subpass rendering workflows, including MSAA resolve/tonemap performed inside a subpass.
-
-## [Tile Memory](tile_memory)
-Explores tile-local memory usage to reduce external bandwidth and improve on-chip efficiency.
-
-## [Tile Shading](tile_shading)
-Implements tile-friendly shading techniques designed to maximize performance on tile-based GPU architectures.
+| Sample | Purpose |
+|---|---|
+| [anf](anf/README.md) | ANF SR and FG integration |
+| [cooperative_matrix](cooperative_matrix/README.md) | Cooperative matrix sample |
+| [fully_fused_mlp](fully_fused_mlp/README.md) | Fused MLP inference |
+| [graph_pipelines](graph_pipelines/README.md) | Vulkan data-graph execution |
+| [hdr_swapchain](hdr_swapchain/README.md) | HDR swapchain sample |
+| [image_processing](image_processing/README.md) | Image processing bloom sample |
+| [opencl_interop](opencl_interop/README.md) | Vulkan/OpenCL interoperability |
+| [rotated_copy](rotated_copy/README.md) | Rotated copy sample |
+| [sgsr](sgsr/README.md) | Snapdragon™ Game Super Resolution sample |
+| [sgsr2](sgsr2/README.md) | Snapdragon™ Game Super Resolution 2 sample |
+| [sub_pass](sub_pass/README.md) | Subpass sample |
+| [tile_memory](tile_memory/README.md) | Tile memory heap sample |
+| [tile_shading](tile_shading/README.md) | Tile shading sample |

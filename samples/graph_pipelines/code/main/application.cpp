@@ -46,7 +46,7 @@ namespace
     float   gNormalAmount = 0.3f;
     float   gNormalMirrorReflectAmount = 0.05f;
 
-    const char* gSceneAssetGraphModel = "PipelineCache.bin"; // What we expect to load the model via VK_QCOM_data_graph_model
+    const char* gSceneAssetGraphModel = "PipelineCache.bin";
     const char* gSceneAssetModel      = "SteamPunkSauna.gltf";
 
     static uint32_t FindMemoryType(VkPhysicalDevice& physicalDevice, uint32_t type_bits, VkMemoryPropertyFlags properties)
@@ -358,7 +358,8 @@ bool Application::CreateGraphPipeline()
         const auto sceneAssetGraphModel = std::filesystem::path(MISC_DESTINATION_PATH).append(gSceneAssetGraphModel).string();
         if (!m_AssetManager->LoadFileIntoMemory(sceneAssetGraphModel, modelData))
         {
-            LOGE("Failed to load Model file, disabling the Graph Pipelines extension");
+            m_GraphPipelinesStatusMessage = "Pipeline cache for model missing. Read the sample README for more instructions.";
+            LOGE("%s", m_GraphPipelinesStatusMessage.c_str());
             m_IsGraphPipelinesSupported = false;
             return true;
         }
@@ -369,7 +370,10 @@ bool Application::CreateGraphPipeline()
     uint32_t cache_version = 0;
     if (!m_QCOM_data_graph_model.ValidateModelCacheBlob(modelData, cache_version))
     {
-        return false;
+        m_GraphPipelinesStatusMessage = "Pipeline cache for model is invalid. Read the sample README for more instructions.";
+        LOGE("%s", m_GraphPipelinesStatusMessage.c_str());
+        m_IsGraphPipelinesSupported = false;
+        return true;
     }
 
     LOGI("QCOM data-graph cache validated. CacheVersion=%u", cache_version);
@@ -380,8 +384,11 @@ bool Application::CreateGraphPipeline()
         vulkan.m_VulkanDevice,
         modelData,
         m_GraphPipelineInstance.pipelineCache))
-    { 
-        return false;
+    {
+        m_GraphPipelinesStatusMessage = "Pipeline cache for model could not be loaded. Read the sample README for more instructions.";
+        LOGE("%s", m_GraphPipelinesStatusMessage.c_str());
+        m_IsGraphPipelinesSupported = false;
+        return true;
     }
 
     LOGI("Creating Graph Pipeline Layout...");
@@ -1259,6 +1266,11 @@ void Application::UpdateGui()
             ImGui::BeginDisabled(!m_IsGraphPipelinesSupported);
             ImGui::Checkbox("Upscaling Enabled", &m_ShouldUpscale);
             ImGui::EndDisabled();
+
+            if (!m_GraphPipelinesStatusMessage.empty())
+            {
+                ImGui::TextColored(ImVec4(1, 1, 0, 1), "%s", m_GraphPipelinesStatusMessage.c_str());
+            }
 
             if (ImGui::CollapsingHeader("Sun Light", ImGuiTreeNodeFlags_Framed))
             {

@@ -1,14 +1,11 @@
-# VK_KHR_cooperative_matrix Extension Sample
+# Cooperative matrix sample
 
-![Screenshot](img/screenshot.png)
+![Cooperative matrix sample output](img/screenshot.png)
 
-This sample demonstrates the use of the *[VK_KHR_cooperative_matrix](https://docs.vulkan.org/refpages/latest/refpages/source/VK_KHR_cooperative_matrix.html)* extension in Vulkan to run matrix operations using GPU‑accelerated cooperative matrix arithmetic.
+Runs matrix operations on supported Adreno™ GPUs using `VK_KHR_cooperative_matrix`. The application queries supported tile sizes and component types before creating a workload.
 
-The extension enables the application to query supported matrix tile sizes and data types, allocate the required buffers, and dispatch compute workloads that take advantage of hardware‑level cooperative matrix execution.
+The default layout comparison measures alternative input layouts. The UI also exposes custom layouts and legacy tests. Validate GPU output against the CPU reference before interpreting timings. Available cases, including Qualcomm™-specific paths, depend on device capabilities.
 
-The sample highlights how cooperative matrices can significantly improve the performance of operations such as matrix multiplication and convolution, showcasing how Vulkan applications can leverage Qualcomm™-specific GPU capabilities to achieve higher throughput on Adreno™ GPUs.
+## Build and run
 
-## Running
-
-- If you haven't already, setup the framework and build the code [instructions here](../../README.md#configuring)
-- Running this sample has no special additional requirements [instructions here](../../README.md#running)
+Follow the [framework setup](../../README.md#configuring), select `cooperative_matrix`, and build the target platform. Use the [run instructions](../../README.md#running) for installation, working directories, and configuration.

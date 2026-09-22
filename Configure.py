@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: BSD-3-Clause
+
 #
 # Copyright (c) 2025 QUALCOMM Technologies Inc.
 # All Rights Reserved.
@@ -580,10 +582,10 @@ android {{
         if (mergeDebugAssets)   mergeDebugAssets.dependsOn(copyTmpAssets)
         if (mergeReleaseAssets) mergeReleaseAssets.dependsOn(copyTmpAssets)
 
-        // Lint model generation also reads source-set assets; keep it ordered after the assets are staged.
-        tasks.matching {{ it.name.endsWith("LintReportModel") }}.configureEach {{
-            dependsOn(copyTmpAssets)
-        }}
+        def lintModelDebug   = tasks.findByName("generateDebugLintReportModel")
+        def lintModelRelease = tasks.findByName("generateReleaseLintReportModel")
+        if (lintModelDebug)   lintModelDebug.dependsOn(copyTmpAssets)
+        if (lintModelRelease) lintModelRelease.dependsOn(copyTmpAssets)
     }}
 
     def overrideFile = file("${{project.projectDir}}/../override.gradle")

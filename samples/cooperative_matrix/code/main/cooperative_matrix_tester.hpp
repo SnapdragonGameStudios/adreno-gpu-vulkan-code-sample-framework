@@ -32,6 +32,21 @@ enum MatrixTransposeOption
     VARIABLE,
 };
 
+enum class MatrixLayout
+{
+    K_FIRST,
+    M_FIRST,
+    N_FIRST,
+    TILED_K_FIRST,
+};
+
+enum class BenchmarkMode
+{
+    LAYOUT_COMPARISON,
+    CUSTOM_LAYOUTS,
+    LEGACY_TESTS,
+};
+
 enum FillDataType { FILL_WITH_ZERO = 0, FILL_WITH_CONSTANTS, FILL_WITH_RANDON_UINT, FILL_WITH_RANDON_INT, FILL_SEQUENCE_INT, FILL_WITH_RANDOM_LOW_HIGH_INT, FILL_WITH_RANDOM_FLOAT, FILL_WITH_RANDOM_PLUS1_MINUS1_FLOAT };
 
 class CooperativeMatrixRunner
@@ -52,10 +67,11 @@ class CooperativeMatrixRunner
         int KSizeInBlocks;
         uint32_t perf_loop;
 
-        bool layoutA_Mfirst = false;
-        bool layoutB_Nfirst = false;
+        MatrixLayout layoutA = MatrixLayout::TILED_K_FIRST;
+        MatrixLayout layoutB = MatrixLayout::TILED_K_FIRST;
+        MatrixLayout layoutR = MatrixLayout::N_FIRST;
+
         bool layoutC_Mfirst = false;
-        bool layoutR_Mfirst = false;
 
         int inputWidth = 32;
         int inputHeight = 16;
@@ -67,9 +83,6 @@ class CooperativeMatrixRunner
         double time_total;
         double TOPS;
         double percentage;
-        uint32_t total_m;
-        uint32_t total_n;
-        uint32_t total_k;
         std::optional<bool> validation_pass; // set when validate checkbox is on
     };
 
@@ -99,10 +112,11 @@ class CooperativeMatrixRunner
             std::vector<TestDescription> test_descriptions;
             std::vector<TestResult>      test_results;
 
-            bool layoutA_Mfirst = false;
-            bool layoutB_Nfirst = false;
+            MatrixLayout layoutA = MatrixLayout::TILED_K_FIRST;
+            MatrixLayout layoutB = MatrixLayout::TILED_K_FIRST;
+            MatrixLayout layoutR = MatrixLayout::N_FIRST;
+
             bool layoutC_Mfirst = false;
-            bool layoutR_Mfirst = false;
         };
 
         TestGroupTemplateDescription template_description;
@@ -123,8 +137,6 @@ private:
 
     void PrepareTestSession();
     std::optional<TestResult> RunTest(const TestDescription& test_description);
-    void LogCorrelationTable() const;
-    double GetReferencePeakTops(VkComponentTypeKHR input_type, VkComponentTypeKHR output_type) const;
 
 private:
 
@@ -132,8 +144,13 @@ private:
 
     std::vector<VkCooperativeMatrixPropertiesKHR> m_hFoundCooperativeMatrices;
 
-    TestType     m_test_type           = TT_MXM_BASIC;
-    FillDataType m_fill_data_type      = FILL_WITH_RANDON_INT;
+    BenchmarkMode m_benchmark_mode      = BenchmarkMode::LAYOUT_COMPARISON;
+    TestType      m_test_type           = TT_MXM_BASIC;
+    FillDataType  m_fill_data_type      = FILL_WITH_RANDON_INT;
+
+    MatrixLayout m_custom_layout_a = MatrixLayout::TILED_K_FIRST;
+    MatrixLayout m_custom_layout_b = MatrixLayout::TILED_K_FIRST;
+    MatrixLayout m_custom_layout_r = MatrixLayout::N_FIRST;
 
     MatrixTransposeOption m_matrix_transpose_options[NUM_MATS] = { VARIABLE , VARIABLE , VARIABLE , ALWAYS_FALSE };
 
@@ -144,10 +161,9 @@ private:
     bool m_normalize_inputs = true;
     int m_input_width = 32;
     int m_input_height = 16;
-    int m_reference_clock_mhz = 1025;
-    int m_reference_malu_count = 1536;
-    bool m_log_correlation_table = true;
-    bool m_logged_current_test_summary = false;
+
+    bool  m_show_peak_percentage = true;
+    float m_peak_frequency_mhz = 1025.0f;
 
     bool     m_is_processing_tests   = false;
     uint32_t m_total_tests           = 0;

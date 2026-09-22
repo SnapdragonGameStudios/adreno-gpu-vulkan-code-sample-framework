@@ -1,3 +1,5 @@
-Place libVkLayer_khronos_validation.so in this folder to enable Vulkan Validation layers in Android samples (requires rebuild of sample .apks)
+# Android Vulkan validation layer
 
-Pre-built validation layer libraries are provided by Khronos at the [official Khronos validation layer release](https://github.com/KhronosGroup/Vulkan-ValidationLayers/releases) page.
+Place `libVkLayer_khronos_validation.so` for `arm64-v8a` in this directory, then rebuild the sample APK.
+
+Download a matching library from the [Khronos validation-layer releases](https://github.com/KhronosGroup/Vulkan-ValidationLayers/releases). Enable validation in the application configuration when needed.

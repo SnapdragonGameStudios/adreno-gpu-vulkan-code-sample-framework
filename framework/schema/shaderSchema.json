@@ -394,6 +394,9 @@
     "TileShader": {
 
     },
+    "$comment": {
+      "type": "string"
+    },
     "$schema": {
       "type": "string"
     }

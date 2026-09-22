@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+
 //=============================================================================
 //
 //                  Copyright (c) 2022 QUALCOMM Technologies Inc.
@@ -21,6 +23,16 @@ using TextureVulkan = Texture<Vulkan>;
 using ImageVulkan = Image<Vulkan>;
 using ImageViewVulkan = ImageView<Vulkan>;
 using SamplerVulkan = Sampler<Vulkan>;
+
+struct TextureVulkanProperties
+{
+    VkImageUsageFlags    Usage       = 0;
+    VkImageTiling        Tiling      = VK_IMAGE_TILING_OPTIMAL;
+    VkSampleCountFlagBits Samples    = VK_SAMPLE_COUNT_1_BIT;
+    VkImageCreateFlags   CreateFlags = 0;
+    VkImageAspectFlags   AspectMask  = 0;
+    TEXTURE_TYPE         TextureType = TEXTURE_TYPE::TT_NORMAL;
+};
 
 /// @brief Convert from our TextureFormat to Vulkan's VkFormat
 extern VkFormat TextureFormatToVk(TextureFormat);
@@ -140,6 +152,8 @@ public:
     VkSampler			  GetVkSampler() const { return Sampler.GetVkSampler(); }
     VkImageView			  GetVkImageView() const { return ImageView.GetVkImageView(); }
     VkClearValue          GetVkClearValue() const { return ClearValue; }
+    const TextureVulkanProperties& GetProperties() const { return Properties; }
+    void                  SetProperties(const TextureVulkanProperties& properties) { Properties = properties; }
     bool				  IsEmpty() const { return Image.IsEmpty() || Sampler.IsEmpty(); }
 
     uint32_t  Width = 0;
@@ -152,6 +166,7 @@ public:
     TextureFormat  Format = TextureFormat::UNDEFINED;
     VkImageLayout ImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     VkClearValue  ClearValue {};
+    TextureVulkanProperties Properties{};
 
 public:
     Image<Vulkan>                          Image;

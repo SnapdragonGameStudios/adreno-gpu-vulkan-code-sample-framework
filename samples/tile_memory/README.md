@@ -1,15 +1,11 @@
-# Tile Memory Heap Sample
+# Tile memory heap sample
 
-![Screenshot](img/screenshot.png)
+![Tile memory heap sample output](img/screenshot.png)
 
-This sample demonstrates a light clustering algorithm using Vulkan, with specific support for the *[VK_QCOM_tile_memory_heap](https://docs.vulkan.org/refpages/latest/refpages/source/VK_QCOM_tile_memory_heap.html)* extension.
-This extension allows the application to allocate and manage tile memory, which is used for efficient memory management within a command buffer submission batch.
+Uses the Qualcomm™ extension `VK_QCOM_tile_memory_heap` in a clustered-lighting renderer on supported Adreno™ GPUs.
 
-The sample showcases how tile memory can be used to optimize rendering performance by reducing memory bandwidth and improving cache locality. It implements a forward rendering pipeline with clustered lighting, where lights are grouped based on screen-space tiles. These tiles are processed using tile-local memory allocations, enabling fast access and minimizing global memory usage.
+The application allocates resources from the tile memory heap and uses them within the extension's lifetime rules. Inspect allocation, binding, and submission boundaries before adapting the technique. The extension path requires compatible hardware and drivers.
 
-The rendering technique is designed to highlight the benefits of tile memory in scenarios with many dynamic lights, demonstrating how Vulkan applications can leverage Qualcomm™-specific extensions to achieve better performance on Adreno™ GPUs.
+## Build and run
 
-## Running
-
-- If you haven't already, setup the framework and build the code [instructions here](../../README.md#configuring)
-- Running this sample has no special additional requirements [instructions here](../../README.md#running)
+Follow the [framework setup](../../README.md#configuring), select `tile_memory`, and build the target platform. Use the [run instructions](../../README.md#running) for installation, working directories, and configuration.
