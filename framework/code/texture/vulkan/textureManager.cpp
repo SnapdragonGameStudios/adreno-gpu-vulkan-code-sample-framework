@@ -217,7 +217,7 @@ const TextureBase* TextureManager<Vulkan>::CreateTextureFromBuffer( const void* 
 {
     auto texture = ::CreateTextureFromBuffer( m_GfxApi, pData, DataSize, Width, Height, Depth, Format, SamplerMode, Filter, name.c_str() );
 
-    assert( name.empty() ); // must have a valid name
+    assert( !name.empty() ); // must have a valid name
     auto it = m_LoadedTextures.try_emplace( name, std::move(texture) );
     if (!it.second)
     {
@@ -234,7 +234,7 @@ const TextureBase* TextureManager<Vulkan>::CreateTextureObjectView( const Textur
 {
     auto texture = ::CreateTextureObjectView( m_GfxApi, apiCast<Vulkan>(original), viewFormat );
 
-    assert( name.empty() ); // must have a valid name
+    assert( !name.empty() ); // must have a valid name
     auto it = m_LoadedTextures.try_emplace( name, std::move( texture ) );
     if (!it.second)
     {

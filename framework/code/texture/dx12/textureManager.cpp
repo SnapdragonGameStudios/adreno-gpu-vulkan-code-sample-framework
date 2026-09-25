@@ -174,7 +174,7 @@ const TextureBase* TextureManager<Dx12>::CreateTextureFromBuffer( const void* pD
 {
     auto texture = ::CreateTextureFromBuffer( m_GfxApi, pData, DataSize, Width, Height, Depth, Format, SamplerMode, Filter, name.c_str() );
 
-    assert( name.empty() ); // must have a valid name
+    assert( !name.empty() ); // must have a valid name
     auto it = m_LoadedTextures.try_emplace( name, std::move( texture ) );
     if (!it.second)
     {
