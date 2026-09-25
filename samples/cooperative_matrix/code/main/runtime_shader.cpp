@@ -112,13 +112,12 @@ std::vector<uint32_t> RuntimeShader::CompileGLSLToSPIRV(
 //         .resource = nullptr,
     };
 
-    if (!glslang_shader_create(&input)) // initialize internally
+    glslang_shader_t* shader = glslang_shader_create(&input);
+    if (!shader)
     {
         LOGE("Failed to create shader\n");
         return {};
     }
-
-    glslang_shader_t* shader = glslang_shader_create(&input);
 
     if (!glslang_shader_preprocess(shader, &input))
     {

@@ -31,6 +31,15 @@
 #endif
 
 #include "imgui.h"
+#include "cooperative_matrix_conversion.hpp"
+#include "system/config.h"
+
+VAR(bool, gCoopAutoRun, false, kVariableNonpersistent);
+VAR(bool, gCoopValidate, false, kVariableNonpersistent);
+VAR(int, gCoopRepeats, 32, kVariableNonpersistent);
+VAR(int, gCoopTest, 0, kVariableNonpersistent);
+VAR(bool, gCoopLegacyLayouts, false, kVariableNonpersistent);
+VAR(int, gCoopKBlocks, 128, kVariableNonpersistent);
 
 #include <random>
 #include <iostream>
@@ -138,11 +147,13 @@ namespace
         VkComponentTypeKHR RType)
     {
         bool valid_testtypes = false;
-    
+
         int32_t matrixprop;
         for(matrixprop = 0; matrixprop < cooperativeMatrixProperties.size() && !valid_testtypes; ++matrixprop)
         {
-            if ((cooperativeMatrixProperties[matrixprop].ResultType == RType) &&
+            if (cooperativeMatrixProperties[matrixprop].scope == VK_SCOPE_SUBGROUP_KHR &&
+                !cooperativeMatrixProperties[matrixprop].saturatingAccumulation &&
+                (cooperativeMatrixProperties[matrixprop].ResultType == RType) &&
                 (cooperativeMatrixProperties[matrixprop].CType       == CType) &&
                 (cooperativeMatrixProperties[matrixprop].BType       == BType) &&
                 (cooperativeMatrixProperties[matrixprop].AType       == AType) &&
@@ -502,7 +513,7 @@ namespace
         for (unsigned int col = 0; col < mcols; col++)
             for (unsigned int row = 0; row < mrows; row++)
                 matrixOut[col*mrows + row] = matrix[row*mcols + col];
-    
+
         std::cout << "\nFinished Transposing MxM on CPU\n";
     }
 
@@ -560,6 +571,7 @@ bool CooperativeMatrixRunner::InitializeRunner()
     if (!cooperativeMatrixEXT)
     {
         LOGE("Ext_VK_KHR_cooperative_matrix potentially unresolved!");
+        return false;
     }
 
     // select supported cooperative matrix types/sizes
@@ -569,7 +581,8 @@ bool CooperativeMatrixRunner::InitializeRunner()
         &nCoopMatrixPropCount,
         NULL
     ));
-    
+
+    if (nCoopMatrixPropCount == 0) return false;
     m_hFoundCooperativeMatrices.resize(nCoopMatrixPropCount);
     for (auto& matrixProp : m_hFoundCooperativeMatrices)
     {
@@ -580,7 +593,7 @@ bool CooperativeMatrixRunner::InitializeRunner()
     CHECK_VK(cooperativeMatrixEXT->m_vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR(
             m_vulkan_instance.m_VulkanGpu,
             &nCoopMatrixPropCount,
-            &m_hFoundCooperativeMatrices[0]
+            m_hFoundCooperativeMatrices.data()
     ));
 
     LOGI("Found Cooperative Matrices:\n");
@@ -603,10 +616,10 @@ bool CooperativeMatrixRunner::InitializeRunner()
              64, 64, 8}, // Size (tile)
 
             {8,  12, 128,
-             64, 32, 16},
+             64, 32, 8},
 
             {8,  24, 128,
-             64, 16, 32}
+             64, 16, 8}
         } });
 
     m_test_group_templates.push_back(TestGroupTemplateDescription{
@@ -637,6 +650,22 @@ bool CooperativeMatrixRunner::InitializeRunner()
              0, 16, 0}
         } });
 
+    auto unsignedTemplate = m_test_group_templates.back();
+    unsignedTemplate.input_type = VK_COMPONENT_TYPE_UINT8_KHR;
+    unsignedTemplate.output_type = VK_COMPONENT_TYPE_UINT32_KHR;
+    m_test_group_templates.push_back(unsignedTemplate);
+    if (gCoopAutoRun)
+    {
+        m_test_repeats = std::clamp(gCoopRepeats, 1, 1024);
+        m_validate_matrix_result = gCoopValidate;
+        m_test_type = static_cast<TestType>(std::clamp(gCoopTest, 0, int(TT_COUNT) - 1));
+        m_legacy_layouts = gCoopLegacyLayouts;
+        for (auto& t : m_test_group_templates)
+            for (auto& size : t.size_configurations)
+                size.KSizeInBlocks = std::clamp(gCoopKBlocks, 1, 128);
+        PrepareTestSession();
+        LOGI("COOP_SESSION_BEGIN tests=%u", m_total_tests);
+    }
     return true;
 }
 
@@ -675,6 +704,7 @@ bool CooperativeMatrixRunner::TriggerPendingTests()
     }
 
     m_is_processing_tests = false;
+    LOGI("COOP_SESSION_DONE tests=%u", m_total_processed_tests);
 
     return true;
 }
@@ -717,17 +747,11 @@ void CooperativeMatrixRunner::RenderUI()
             "CONV",
         };
 
-        if (m_benchmark_mode == BenchmarkMode::LAYOUT_COMPARISON)
-        {
-            m_test_type = TT_MXM_BASIC;
-        }
-
         int test_type_current_index = static_cast<int>(m_test_type);
 
         ImGui::Text("Note: Not all tests are compatible with all devices!");
         ImGui::Text("Check shader instruction set for compatibility if testing other than MXM_BASIC");
 
-        ImGui::BeginDisabled(m_benchmark_mode == BenchmarkMode::LAYOUT_COMPARISON);
         if (ImGui::BeginCombo("Test Case", test_case_names[test_type_current_index]))
         {
             // NOTE: Temporarily disabled other tests, new test template coming on the next patch
@@ -744,7 +768,6 @@ void CooperativeMatrixRunner::RenderUI()
             }
             ImGui::EndCombo();
         }
-        ImGui::EndDisabled();
 
         ImGui::BeginDisabled(m_test_type != TestType::TT_CONV);
         ImGui::DragInt("Conv Width", &m_input_width, 1.0f, 1, 256);
@@ -753,9 +776,13 @@ void CooperativeMatrixRunner::RenderUI()
         ImGui::EndDisabled();
 
         ImGui::Separator();
+        ImGui::Checkbox("Legacy K-first comparison", &m_legacy_layouts);
         ImGui::Checkbox("Show Peak Percentage", &m_show_peak_percentage);
         ImGui::BeginDisabled(!m_show_peak_percentage);
         ImGui::DragFloat("Peak Frequency MHz", &m_peak_frequency_mhz, 1.0f, 1.0f, 3000.0f, "%.0f");
+        ImGui::InputFloat("FP32 peak TOPS at frequency", &m_peak_fp32);
+        ImGui::InputFloat("FP16 peak TOPS at frequency", &m_peak_fp16);
+        ImGui::InputFloat("INT8 peak TOPS at frequency", &m_peak_int8);
         ImGui::EndDisabled();
     }
 
@@ -835,18 +862,6 @@ void CooperativeMatrixRunner::RenderUI()
             ImGui::TextDisabled("The default table uses fixed layout rows.");
         }
 
-        if (m_benchmark_mode == BenchmarkMode::LEGACY_TESTS && m_validate_matrix_result)
-        {
-            ImGui::BeginDisabled();
-            static bool always_true = true;
-            ImGui::Checkbox("Transpose When Needed", &always_true);
-            ImGui::EndDisabled();
-        }
-        else if (m_benchmark_mode == BenchmarkMode::LEGACY_TESTS)
-        {
-            ImGui::Checkbox("Transpose When Needed", &m_transpose_when_needed);
-        }
-
         ImGui::Checkbox("Validate Result", &m_validate_matrix_result);
     }
 
@@ -881,7 +896,7 @@ void CooperativeMatrixRunner::RenderUI()
                 {
                     is_any_result_valid |= test_result.is_valid;
                 }
-                
+
                 if (!is_any_result_valid)
                 {
                     continue;
@@ -939,7 +954,7 @@ void CooperativeMatrixRunner::RenderUI()
 
                             const auto& test_description = test_entry.test_descriptions[test_result_index];
                             const auto& test_result      = test_entry.test_results[test_result_index];
-                            
+
                             if (test_result.is_valid)
                             {
                                 auto GetPercentageColor = [](float value) -> ImVec4
@@ -1023,16 +1038,20 @@ void CooperativeMatrixRunner::PrepareTestSession()
 
     auto GenerateLayoutCombinations = [&]() -> std::vector<LayoutCombination>
     {
+        if (m_test_type == TT_CONV)
+            return { { MatrixLayout::K_FIRST, MatrixLayout::K_FIRST, MatrixLayout::N_FIRST, false } };
+
         if (m_benchmark_mode == BenchmarkMode::LAYOUT_COMPARISON)
         {
+            const auto kLayout = m_legacy_layouts ? MatrixLayout::K_FIRST : MatrixLayout::TILED_K_FIRST;
             return {
-                { MatrixLayout::TILED_K_FIRST, MatrixLayout::TILED_K_FIRST, MatrixLayout::N_FIRST, false },
-                { MatrixLayout::M_FIRST,       MatrixLayout::TILED_K_FIRST, MatrixLayout::N_FIRST, false },
-                { MatrixLayout::TILED_K_FIRST, MatrixLayout::N_FIRST,       MatrixLayout::N_FIRST, false },
+                { kLayout, kLayout, MatrixLayout::N_FIRST, false },
+                { MatrixLayout::M_FIRST,       kLayout, MatrixLayout::N_FIRST, false },
+                { kLayout, MatrixLayout::N_FIRST,       MatrixLayout::N_FIRST, false },
                 { MatrixLayout::M_FIRST,       MatrixLayout::N_FIRST,       MatrixLayout::N_FIRST, false },
-                { MatrixLayout::TILED_K_FIRST, MatrixLayout::TILED_K_FIRST, MatrixLayout::M_FIRST, true },
-                { MatrixLayout::M_FIRST,       MatrixLayout::TILED_K_FIRST, MatrixLayout::M_FIRST, true },
-                { MatrixLayout::TILED_K_FIRST, MatrixLayout::N_FIRST,       MatrixLayout::M_FIRST, true },
+                { kLayout, kLayout, MatrixLayout::M_FIRST, true },
+                { MatrixLayout::M_FIRST,       kLayout, MatrixLayout::M_FIRST, true },
+                { kLayout, MatrixLayout::N_FIRST,       MatrixLayout::M_FIRST, true },
                 { MatrixLayout::M_FIRST,       MatrixLayout::N_FIRST,       MatrixLayout::M_FIRST, true },
             };
         }
@@ -1096,12 +1115,6 @@ void CooperativeMatrixRunner::PrepareTestSession()
 
     for (const auto& test_template_description : m_test_group_templates)
     {
-        if (m_benchmark_mode == BenchmarkMode::LAYOUT_COMPARISON &&
-            test_template_description.input_type == VK_COMPONENT_TYPE_FLOAT32_KHR)
-        {
-            continue;
-        }
-
         TestGroup new_test_group;
         new_test_group.template_description = test_template_description;
 
@@ -1116,7 +1129,7 @@ void CooperativeMatrixRunner::PrepareTestSession()
         new_test_description.input_type  = test_template_description.input_type;
         new_test_description.output_type = test_template_description.output_type;
 
-        new_test_description.perf_loop = static_cast<uint32_t>(m_test_repeats);
+        new_test_description.perf_loop = static_cast<uint32_t>(std::clamp(m_test_repeats, 1, 1024));
 
         for (auto& layoutCombination : layout_combinations)
         {
@@ -1169,7 +1182,7 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
     int KSizeInBlocks = test_description.KSizeInBlocks;
 
     uint32_t perf_loop = test_description.perf_loop;
-    
+
     bool layoutA_Mfirst = test_description.layoutA == MatrixLayout::M_FIRST;
     bool layoutA_TiledKfirst = test_description.layoutA == MatrixLayout::TILED_K_FIRST;
     bool layoutB_Nfirst = test_description.layoutB == MatrixLayout::N_FIRST;
@@ -1185,7 +1198,7 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
     int init    = test_description.fill_data_type;
 
     auto command_pool_queue_family_index = m_vulkan_instance.m_VulkanQueues[Vulkan::QueueIndex::eGraphicsQueue].QueueFamilyIndex;
-    auto submission_queue                = m_vulkan_instance.m_VulkanQueues[command_pool_queue_family_index].Queue;
+    auto submission_queue                = m_vulkan_instance.m_VulkanQueues[Vulkan::QueueIndex::eGraphicsQueue].Queue;
 
     // Not optimal at all but we are drawing the UI and running the test in the same queue
     m_vulkan_instance.QueueWaitIdle(Vulkan::QueueIndex::eGraphicsQueue);
@@ -1193,98 +1206,29 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
     const auto subgroup_size = m_vulkan_instance.GetExtension<ExtensionLib::Vulkan_SubgroupPropertiesHook>()->Properties.subgroupSize;
     const auto gpuvendor_id = static_cast<gpu_vendors>(m_vulkan_instance.GetGpuProperties().Base.properties.vendorID);
     const auto gputier_id   = static_cast<gpu_tiers>(m_vulkan_instance.GetGpuProperties().Base.properties.deviceID);
-    
+
     const auto device_limits = m_vulkan_instance.GetGpuProperties().Base.properties.limits;
-
-    // Create descriptor set and descriptor set layout for our A,B,C,R matrices (buffers)
-    VkDescriptorSetLayout descriptorSetLayout;
-    VkDescriptorSet descriptorSet;
-
-    auto create_buffers_desc_set = [](VkDevice device, VkDescriptorSetLayout & descriptorSetLayout, VkDescriptorSet & descriptorSet, const uint32_t num_buffers)
-    {
-        VkResult result;
-
-        VkDescriptorPoolSize* poolSizes = new VkDescriptorPoolSize[num_buffers];
-        for (uint32_t i = 0; i < num_buffers; i++)
-            poolSizes[i] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 };
-
-        VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = {};
-        descriptorPoolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        descriptorPoolCreateInfo.pNext = NULL;
-        descriptorPoolCreateInfo.maxSets = 1;
-        descriptorPoolCreateInfo.poolSizeCount = num_buffers;
-        descriptorPoolCreateInfo.pPoolSizes = poolSizes;
-
-        VkDescriptorPool descriptorPool;
-        result = vkCreateDescriptorPool(device, &descriptorPoolCreateInfo, NULL, &descriptorPool);
-        CHECK_VK(result);
-
-        VkDescriptorSetLayoutBinding* layoutBindings = new VkDescriptorSetLayoutBinding[num_buffers];
-        for (uint32_t i = 0; i < num_buffers; i++)
-        {
-            layoutBindings[i].binding = i;
-            layoutBindings[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            layoutBindings[i].descriptorCount = 1;
-            layoutBindings[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-            layoutBindings[i].pImmutableSamplers = nullptr;
-        }
-
-        VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo = {};
-        descriptorSetLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        descriptorSetLayoutCreateInfo.pNext = nullptr;
-        descriptorSetLayoutCreateInfo.flags = 0;
-        descriptorSetLayoutCreateInfo.bindingCount = num_buffers;
-        descriptorSetLayoutCreateInfo.pBindings = layoutBindings;
-
-        result = vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCreateInfo, NULL, &descriptorSetLayout);
-        CHECK_VK(result);
-
-        VkDescriptorSetAllocateInfo setAllocateInfo = {};
-        setAllocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        setAllocateInfo.pNext = nullptr;
-        setAllocateInfo.descriptorPool = descriptorPool;
-        setAllocateInfo.descriptorSetCount = 1; // Use only 1 set for all descriptors
-        setAllocateInfo.pSetLayouts = &descriptorSetLayout;
-
-        result = vkAllocateDescriptorSets(device, &setAllocateInfo, &descriptorSet);
-        CHECK_VK(result);
-
-        delete[] poolSizes;
-        delete[] layoutBindings;
-    };
-    
-    create_buffers_desc_set(m_vulkan_instance.m_VulkanDevice, descriptorSetLayout, descriptorSet, NUM_MATS);
-
-    // Create command pool
-    VkCommandPoolCreateInfo commandPoolCreateInfo = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, nullptr, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT, (uint32_t)command_pool_queue_family_index };
-    VkCommandPool commandPool;
-    result = vkCreateCommandPool(m_vulkan_instance.m_VulkanDevice, &commandPoolCreateInfo, NULL, &commandPool);
-    CHECK_VK(result);
-
-    // Create command buffer
-    //
-    // The command buffers, one for initializing buffers, one for compute, one
-    // for reading back the results. This lets us time the compute work more
-    // precisely.
-    VkCommandBufferAllocateInfo commandBufferAllocateInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr, commandPool, VK_COMMAND_BUFFER_LEVEL_PRIMARY, 3 };
-    VkCommandBuffer commandBuffers[3];
-    result = vkAllocateCommandBuffers(m_vulkan_instance.m_VulkanDevice, &commandBufferAllocateInfo, commandBuffers);
-    CHECK_VK(result);
-   
-    // Creat Pipeline layout
-    // Use only 1 set for all descriptors
-    VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, NULL, 0, 1, &descriptorSetLayout, 0, nullptr };
-    VkPipelineLayout pipelineLayout;
-    result = vkCreatePipelineLayout(m_vulkan_instance.m_VulkanDevice, &pipelineLayoutCreateInfo, NULL, &pipelineLayout);
-    CHECK_VK(result);
 
     // Query matrix properties and see if the test is supported for the given GPU
     bool valid_testtypes = false;
     VkCooperativeMatrixPropertiesKHR cooperativeMatrixProps = {};
     if (!FindMatrixProperty(m_hFoundCooperativeMatrices, cooperativeMatrixProps, MSize, NSize, KSize, test_description.input_type, test_description.input_type, test_description.output_type, test_description.output_type))
     {
+        LOGI("Skipping test: tile/type combination is not supported.");
         return std::nullopt;
     }
+
+    const auto* conversion = m_vulkan_instance.GetExtension<QcomCoopMatConversionExtension>();
+    if (tt != TT_MXM_BASIC && (!conversion || !conversion->RequestedFeatures.cooperativeMatrixConversion
+        || subgroup_size != 64 || cooperativeMatrixProps.MSize != subgroup_size))
+    {
+        LOGI("Skipping conversion test: requires QCOM conversion and one lane per tile row.");
+        return std::nullopt;
+    }
+    if (perf_loop == 0 || MSizeInBlocks <= 0 || NSizeInBlocks <= 0 || KSizeInBlocks <= 0)
+        return std::nullopt;
+    if (tt == TT_CONV && (layoutA_Mfirst || layoutA_TiledKfirst || !layoutB_Kfirst || layoutR_Mfirst))
+        return std::nullopt;
 
     if (m_normalize_inputs)
     {
@@ -1340,10 +1284,31 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
             break;
         default: // unknown, including gpu option not part of the map
             printf("\nUnknown GPU");
-            local_size_x = 64;
+            local_size_x = subgroup_size;
             local_size_y = 2;
             local_size_z = 2;
             break;
+    }
+
+    const auto* subgroupControl = m_vulkan_instance.GetExtension<ExtensionLib::Ext_VK_EXT_subgroup_size_control>();
+    if (!subgroupControl || !subgroupControl->RequestedFeatures.subgroupSizeControl
+        || !(subgroupControl->Properties.requiredSubgroupSizeStages & VK_SHADER_STAGE_COMPUTE_BIT)
+        || subgroup_size < subgroupControl->Properties.minSubgroupSize || subgroup_size > subgroupControl->Properties.maxSubgroupSize
+        || local_size_x > device_limits.maxComputeWorkGroupSize[0]
+        || local_size_y > device_limits.maxComputeWorkGroupSize[1] || local_size_z > device_limits.maxComputeWorkGroupSize[2]
+        || local_size_x * local_size_y * local_size_z > device_limits.maxComputeWorkGroupInvocations
+        || (MSizeInBlocks + local_size_y - 1) / local_size_y > device_limits.maxComputeWorkGroupCount[1]
+        || (NSizeInBlocks + local_size_z - 1) / local_size_z > device_limits.maxComputeWorkGroupCount[2])
+    {
+        LOGI("Skipping test: subgroup or dispatch requirements exceed device support.");
+        return std::nullopt;
+    }
+
+    if (tt == TT_CONV && (inputWidth * inputHeight != MSizeInBlocks * cooperativeMatrixProps.MSize))
+    {
+        LOGE("Convolution ConvInputWidth * ConvInputHeight (%d) must equal MSizeInBlocks * MSize (%d) for current datatype",
+            (inputWidth * inputHeight), (MSizeInBlocks * cooperativeMatrixProps.MSize));
+        return std::nullopt;
     }
 
     RuntimeShader runtime_shader;
@@ -1393,20 +1358,101 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
         return std::nullopt;
     }
 
+    // Use packed words for INT8 conversion and contiguous FP16 input.
+    // Unsupported tile packing and M-first FP16 input retain typed loads.
+    if (tt == TT_MXM_VecToMat)
+        runtime_shader.AddDefine("PACKED_A", std::string((bytesPerInput == 1 || (!layoutA_Mfirst && bytesPerInput == 2))
+            && cooperativeMatrixProps.KSize % (4 / bytesPerInput) == 0 ? "1" : "0"));
+
     if (!runtime_shader.Build(ShaderPaths[tt], m_vulkan_instance.m_VulkanDevice, "main", glslang_stage_t::GLSLANG_STAGE_COMPUTE))
     {
         LOGE("Failed to compile test shader");
         return std::nullopt;
     }
-    
+
     VkShaderModule shaderModule = runtime_shader.GetShaderModule();
 
-    if (tt == TT_CONV && (inputWidth * inputHeight != MSizeInBlocks * cooperativeMatrixProps.MSize))
+    // Create descriptor set and descriptor set layout for our A,B,C,R matrices (buffers)
+    VkDescriptorSetLayout descriptorSetLayout;
+    VkDescriptorSet descriptorSet;
+    VkDescriptorPool descriptorPool;
+
+    auto create_buffers_desc_set = [](VkDevice device, VkDescriptorSetLayout & descriptorSetLayout, VkDescriptorSet & descriptorSet, VkDescriptorPool &descriptorPool, const uint32_t num_buffers)
     {
-        LOGE("Convolution ConvInputWidth * ConvInputHeight (%d) must equal MSizeInBlocks * MSize (%d) for current datatype",
-            (inputWidth * inputHeight), (MSizeInBlocks * cooperativeMatrixProps.MSize));
-        return std::nullopt;
-    }
+        VkResult result;
+
+        VkDescriptorPoolSize* poolSizes = new VkDescriptorPoolSize[num_buffers];
+        for (uint32_t i = 0; i < num_buffers; i++)
+            poolSizes[i] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1 };
+
+        VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = {};
+        descriptorPoolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        descriptorPoolCreateInfo.pNext = NULL;
+        descriptorPoolCreateInfo.maxSets = 1;
+        descriptorPoolCreateInfo.poolSizeCount = num_buffers;
+        descriptorPoolCreateInfo.pPoolSizes = poolSizes;
+
+        result = vkCreateDescriptorPool(device, &descriptorPoolCreateInfo, NULL, &descriptorPool);
+        CHECK_VK(result);
+
+        VkDescriptorSetLayoutBinding* layoutBindings = new VkDescriptorSetLayoutBinding[num_buffers];
+        for (uint32_t i = 0; i < num_buffers; i++)
+        {
+            layoutBindings[i].binding = i;
+            layoutBindings[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            layoutBindings[i].descriptorCount = 1;
+            layoutBindings[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+            layoutBindings[i].pImmutableSamplers = nullptr;
+        }
+
+        VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo = {};
+        descriptorSetLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        descriptorSetLayoutCreateInfo.pNext = nullptr;
+        descriptorSetLayoutCreateInfo.flags = 0;
+        descriptorSetLayoutCreateInfo.bindingCount = num_buffers;
+        descriptorSetLayoutCreateInfo.pBindings = layoutBindings;
+
+        result = vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCreateInfo, NULL, &descriptorSetLayout);
+        CHECK_VK(result);
+
+        VkDescriptorSetAllocateInfo setAllocateInfo = {};
+        setAllocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        setAllocateInfo.pNext = nullptr;
+        setAllocateInfo.descriptorPool = descriptorPool;
+        setAllocateInfo.descriptorSetCount = 1; // Use only 1 set for all descriptors
+        setAllocateInfo.pSetLayouts = &descriptorSetLayout;
+
+        result = vkAllocateDescriptorSets(device, &setAllocateInfo, &descriptorSet);
+        CHECK_VK(result);
+
+        delete[] poolSizes;
+        delete[] layoutBindings;
+    };
+
+    create_buffers_desc_set(m_vulkan_instance.m_VulkanDevice, descriptorSetLayout, descriptorSet, descriptorPool, NUM_MATS);
+
+    // Create command pool
+    VkCommandPoolCreateInfo commandPoolCreateInfo = { VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, nullptr, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT, (uint32_t)command_pool_queue_family_index };
+    VkCommandPool commandPool;
+    result = vkCreateCommandPool(m_vulkan_instance.m_VulkanDevice, &commandPoolCreateInfo, NULL, &commandPool);
+    CHECK_VK(result);
+
+    // Create command buffer
+    //
+    // The command buffers, one for initializing buffers, one for compute, one
+    // for reading back the results. This lets us time the compute work more
+    // precisely.
+    VkCommandBufferAllocateInfo commandBufferAllocateInfo = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, nullptr, commandPool, VK_COMMAND_BUFFER_LEVEL_PRIMARY, 3 };
+    VkCommandBuffer commandBuffers[3];
+    result = vkAllocateCommandBuffers(m_vulkan_instance.m_VulkanDevice, &commandBufferAllocateInfo, commandBuffers);
+    CHECK_VK(result);
+
+    // Creat Pipeline layout
+    // Use only 1 set for all descriptors
+    VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, NULL, 0, 1, &descriptorSetLayout, 0, nullptr };
+    VkPipelineLayout pipelineLayout;
+    result = vkCreatePipelineLayout(m_vulkan_instance.m_VulkanDevice, &pipelineLayoutCreateInfo, NULL, &pipelineLayout);
+    CHECK_VK(result);
 
     int filterWidth  = 3;
     int filterHeight = 3;
@@ -1461,6 +1507,120 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
     testCase.strideBinElements = layoutB_TiledKfirst ? testCase.TILE_K : (layoutB_Kfirst ? mB_paddedK : mB_paddedN);
     testCase.strideCinElements = (layoutC_Mfirst ? mC_paddedM : mC_paddedN);
     testCase.strideRinElements = (layoutR_Mfirst ? mR_paddedM : mR_paddedN);
+
+    // Specialize the shader with the matrix sizes, strides, and constants.
+    // Also, work-group sizes
+    const uint32_t specDataMxMBasic[] = {
+        local_size_x,
+        local_size_y,
+        local_size_z,
+        testCase.TOTAL_M,
+        testCase.TOTAL_N,
+        testCase.TOTAL_K,
+        testCase.TILE_M,
+        testCase.TILE_N,
+        testCase.TILE_K,
+        testCase.layoutA_Mfirst,
+        testCase.layoutB_Nfirst,
+        testCase.layoutA_TiledKfirst,
+        testCase.layoutB_TiledKfirst,
+        testCase.layoutC_Mfirst,
+        testCase.layoutR_Mfirst,
+        testCase.strideAinElements,
+        testCase.strideBinElements,
+        testCase.strideCinElements,
+        testCase.strideRinElements
+    };
+
+    const uint32_t specDataCONV[] = {   // pass to shader_name.comp
+        local_size_x,               // layout(constant_id = 0) const uint local_size_x;
+        local_size_y,               // layout(constant_id = 1) const uint local_size_y;
+        local_size_z,               // layout(constant_id = 2) const uint local_size_z;
+        testCase.TOTAL_M,           // layout(constant_id = 3) const uint TOTAL_M = 1;
+        testCase.TOTAL_N,           // layout(constant_id = 4) const uint TOTAL_N = 1;
+        testCase.TOTAL_K,           // layout(constant_id = 5) const uint TOTAL_K = 1;
+        testCase.TILE_M,            // layout(constant_id = 6) const uint TILE_M = 1;
+        testCase.TILE_N,            // layout(constant_id = 7) const uint TILE_N = 1;
+        testCase.TILE_K,            // layout(constant_id = 8) const uint TILE_K = 1;
+        (uint32_t)inputWidth,       // layout(constant_id = 9) const uint INPUT_W = 1;
+        (uint32_t)inputHeight,      // layout(constant_id =10) const uint INPUT_H = 1;
+        (uint32_t)filterWidth,      // layout(constant_id =11) const uint FILTER_W = 1;
+        (uint32_t)filterHeight,     // layout(constant_id =12) const uint FILTER_H = 1;
+        (uint32_t)dilation,         // layout(constant_id =13) const uint DILATION = 1;
+        (uint32_t)stride,           // layout(constant_id =14) const uint STRIDE  = 1;
+        testCase.strideAinElements, // layout(constant_id =15) const uint strideAinElements = 1;
+        testCase.strideBinElements, // layout(constant_id =16) const uint strideBinElements = 1;
+        testCase.strideCinElements, // layout(constant_id =17) const uint strideCinElements = 1;
+        testCase.strideRinElements  // layout(constant_id =18) const uint strideRinElements = 1;
+    };
+
+    auto fill_specialized_map_entries = [](VkSpecializationMapEntry entries[], uint32_t num_entries, uint32_t sizeof_entry)
+    {
+        for (uint32_t i = 0; i < num_entries; i++)
+            entries[i] = { i, sizeof_entry * i, sizeof_entry };
+    };
+
+#define ARRAY_LENGTH(x) (sizeof(x) / sizeof(x[0]))
+
+    VkSpecializationMapEntry entriesMxMBasic[ARRAY_LENGTH(specDataMxMBasic)];
+    fill_specialized_map_entries(entriesMxMBasic, ARRAY_LENGTH(specDataMxMBasic), sizeof(uint32_t));
+
+    VkSpecializationMapEntry entriesCONV[ARRAY_LENGTH(specDataCONV)];
+    fill_specialized_map_entries(entriesCONV, ARRAY_LENGTH(specDataCONV), sizeof(uint32_t)); // {0, sizeof(uint32_t) * 0, sizeof(uint32_t)}, ...,//{end,  sizeof(uint32_t) * end, sizeof(uint32_t)}
+
+    VkSpecializationInfo specInfo;
+    switch (tt)
+    {
+    case TT_CONV:
+        specInfo = { ARRAY_LENGTH(specDataCONV), entriesCONV, sizeof(specDataCONV), specDataCONV, };
+        break;
+    case TT_MXM_BASIC:
+        specInfo = { ARRAY_LENGTH(specDataMxMBasic), entriesMxMBasic, sizeof(specDataMxMBasic), specDataMxMBasic, };
+        break;
+    case TT_MXM_VecToMat:
+        specInfo = { ARRAY_LENGTH(specDataMxMBasic), entriesMxMBasic, sizeof(specDataMxMBasic), specDataMxMBasic, };
+        break;
+    default:
+        LOGE("Unknown use case(%d), can't sent specialized constantas to shader!", tt);
+    }
+
+#undef ARRAY_LENGTH
+
+    // Create pipeline with a desired subgroup size (e.g., AMD supports two subgroup sizes)
+    VkPipelineShaderStageRequiredSubgroupSizeCreateInfo subgroupSizeInfo = {};
+    subgroupSizeInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO;
+    subgroupSizeInfo.requiredSubgroupSize = subgroup_size; // Must be between min and max
+
+    // SPIR-V 1.6 does not require REQUIRE_FULL_SUBGROUPS. X still equals the pinned subgroup size.
+    VkPipelineShaderStageCreateInfo shaderCreateInfo   = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, &subgroupSizeInfo, 0, VK_SHADER_STAGE_COMPUTE_BIT, shaderModule, "main", &specInfo};
+    VkComputePipelineCreateInfo     pipelineCreateInfo = {VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, NULL, 0, shaderCreateInfo, pipelineLayout, VK_NULL_HANDLE, 0 };
+
+    // Create the query pool
+    VkQueryPool query_pool_timestamps = VK_NULL_HANDLE;       // A query pool is required to use GPU time stamps
+    std::vector<uint64_t> time_stamps((size_t)perf_loop*2, 0);// We will get timestamps for the beginning and end of each of the compute passes
+                                                              // GPU time stamps will be stored in a vector
+    // VK_QUERY_TYPE_TIMESTAMP: We need to specify the query type for this pool, which in our case is for time stamps
+    // time_stamps: Set the no. of queries in this pool
+    VkQueryPoolCreateInfo query_pool_info = { VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO, nullptr, 0, VK_QUERY_TYPE_TIMESTAMP, static_cast<uint32_t>(time_stamps.size()), 0 };
+    result = vkCreateQueryPool(m_vulkan_instance.m_VulkanDevice, &query_pool_info, nullptr, &query_pool_timestamps);
+    CHECK_VK(result);
+
+    std::cout << "\nExecuting vkCreateComputePipelines(...) (takes a while!)\n";
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    result = vkCreateComputePipelines(m_vulkan_instance.m_VulkanDevice, VK_NULL_HANDLE, 1, &pipelineCreateInfo, NULL, &pipeline);
+    CHECK_VK(result);
+
+    if (result != VK_SUCCESS)
+    {
+        LOGE("Skipping test: compute pipeline creation failed (%d).", int(result));
+        vkDestroyQueryPool(m_vulkan_instance.m_VulkanDevice, query_pool_timestamps, nullptr);
+        vkDestroyCommandPool(m_vulkan_instance.m_VulkanDevice, commandPool, nullptr);
+        vkDestroyDescriptorPool(m_vulkan_instance.m_VulkanDevice, descriptorPool, nullptr);
+        vkDestroyPipelineLayout(m_vulkan_instance.m_VulkanDevice, pipelineLayout, nullptr);
+        vkDestroyDescriptorSetLayout(m_vulkan_instance.m_VulkanDevice, descriptorSetLayout, nullptr);
+        vkDestroyShaderModule(m_vulkan_instance.m_VulkanDevice, shaderModule, nullptr);
+        return std::nullopt;
+    }
 
     auto FindProperties = [](const VkPhysicalDeviceMemoryProperties* pMemoryProperties,
         uint32_t memoryTypeBitsRequirement, VkMemoryPropertyFlags requiredProperties) -> int32_t
@@ -1548,7 +1708,7 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
     MatrixDesc matrices[NUM_MATS];
 
     CreateMatrixDesc(m_vulkan_instance.m_VulkanDevice, memory_properties, matrices[MAT_A], cooperativeMatrixProps.AType, mA_paddedM, mA_paddedK);
-    if (tt == TT_CONV) CreateMatrixDesc(m_vulkan_instance.m_VulkanDevice, memory_properties, matrices[MAT_B], cooperativeMatrixProps.AType, filterWidth*filterWidth*mB_paddedN, mB_paddedK);
+    if (tt == TT_CONV) CreateMatrixDesc(m_vulkan_instance.m_VulkanDevice, memory_properties, matrices[MAT_B], cooperativeMatrixProps.AType, filterHeight*filterWidth*mB_paddedN, mB_paddedK);
     else               CreateMatrixDesc(m_vulkan_instance.m_VulkanDevice, memory_properties, matrices[MAT_B], cooperativeMatrixProps.AType, mB_paddedK, mB_paddedN);
     CreateMatrixDesc(m_vulkan_instance.m_VulkanDevice, memory_properties, matrices[MAT_C], cooperativeMatrixProps.CType, mC_paddedM, mC_paddedN);
     CreateMatrixDesc(m_vulkan_instance.m_VulkanDevice, memory_properties, matrices[MAT_R], cooperativeMatrixProps.ResultType, mR_paddedM, mR_paddedN);
@@ -1629,15 +1789,6 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
         InitMatrix((float*)matrices[MAT_C].ptr, testCase.TOTAL_M, testCase.TOTAL_N, matrices[MAT_C].dims.cols, FILL_WITH_ZERO, 2);  
         InitMatrix((float*)matrices[MAT_R].ptr, testCase.TOTAL_M, testCase.TOTAL_N, matrices[MAT_R].dims.cols, FILL_WITH_ZERO, 2);
 
-        if ((m_transpose_when_needed || m_validate_matrix_result) && tt != TT_MXM_BASIC)
-        {
-            if (layoutA_Mfirst) // Matrix A M-First?
-                TransposeMatrix((float*)matrices[MAT_A].ptr, matrices[MAT_A].dims.rows, matrices[MAT_A].dims.cols, "layoutA_Mfirst");
-            if (layoutB_Kfirst) // Matrix B K-First?
-                TransposeMatrix((float*)matrices[MAT_B].ptr, matrices[MAT_B].dims.rows, matrices[MAT_B].dims.cols, "layoutB_Kfirst");
-            if (layoutC_Mfirst) // Matrix C M-First?
-                TransposeMatrix((float*)matrices[MAT_C].ptr, matrices[MAT_C].dims.rows, matrices[MAT_C].dims.cols, "layoutC_Mfirst");
-        }
     }
     else
     if (test_description.input_type == VK_COMPONENT_TYPE_FLOAT16_KHR) // Input/output data Type Float 16?
@@ -1647,15 +1798,6 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
         InitMatrix((FLOAT16*)matrices[MAT_C].ptr, testCase.TOTAL_M, testCase.TOTAL_N, matrices[MAT_C].dims.cols, FILL_WITH_ZERO, 2);
         InitMatrix((FLOAT16*)matrices[MAT_R].ptr, testCase.TOTAL_M, testCase.TOTAL_N, matrices[MAT_R].dims.cols, FILL_WITH_ZERO, 2);
 
-        if ((m_transpose_when_needed || m_validate_matrix_result) && tt != TT_MXM_BASIC)
-        {
-            if (layoutA_Mfirst) // Matrix A M-First?
-                TransposeMatrix((FLOAT16*)matrices[MAT_A].ptr, matrices[MAT_A].dims.rows, matrices[MAT_A].dims.cols, "layoutA_Mfirst");
-            if (layoutB_Kfirst) // Matrix B K-First?
-                TransposeMatrix((FLOAT16*)matrices[MAT_B].ptr, matrices[MAT_B].dims.rows, matrices[MAT_B].dims.cols, "layoutB_Kfirst");
-            if (layoutC_Mfirst) // Matrix C M-First?
-                TransposeMatrix((FLOAT16*)matrices[MAT_C].ptr, matrices[MAT_C].dims.rows, matrices[MAT_C].dims.cols, "layoutC_Mfirst");
-        }
     }
     else
     if (test_description.input_type == VK_COMPONENT_TYPE_SINT8_KHR) // Input data Type signed int8, output data type signed int 32?
@@ -1665,15 +1807,6 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
         InitMatrix((int32_t*)matrices[MAT_C].ptr,testCase.TOTAL_M, testCase.TOTAL_N, matrices[MAT_C].dims.cols, FILL_WITH_ZERO, 2);
         InitMatrix((int32_t*)matrices[MAT_R].ptr,testCase.TOTAL_M, testCase.TOTAL_N, matrices[MAT_R].dims.cols, FILL_WITH_ZERO, 2);
 
-        if ((m_transpose_when_needed || m_validate_matrix_result) && tt != TT_MXM_BASIC)
-        {
-            if (layoutA_Mfirst) // Matrix A M-First?
-                TransposeMatrix((int8_t*)matrices[MAT_A].ptr, matrices[MAT_A].dims.rows, matrices[MAT_A].dims.cols, "layoutA_Mfirst");
-            if (layoutB_Kfirst) // Matrix B K-First?
-                TransposeMatrix((int8_t*)matrices[MAT_B].ptr, matrices[MAT_B].dims.rows, matrices[MAT_B].dims.cols, "layoutB_Kfirst");
-            if (layoutC_Mfirst) // Matrix C M-First?
-                TransposeMatrix((int32_t*)matrices[MAT_C].ptr, matrices[MAT_C].dims.rows, matrices[MAT_C].dims.cols, "layoutC_Mfirst");
-        }
     }
     else
     if (test_description.input_type == VK_COMPONENT_TYPE_UINT8_KHR) // Data Type input unsigned int 8, data type output unsigned int 32?
@@ -1683,30 +1816,21 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
         InitMatrix((uint32_t*)matrices[MAT_C].ptr,testCase.TOTAL_M, testCase.TOTAL_N, matrices[MAT_C].dims.cols, FILL_WITH_ZERO, 2);
         InitMatrix((uint32_t*)matrices[MAT_R].ptr,testCase.TOTAL_M, testCase.TOTAL_N, matrices[MAT_R].dims.cols, FILL_WITH_ZERO, 2);
 
-        if ((m_transpose_when_needed || m_validate_matrix_result) && tt != TT_MXM_BASIC)
-        {
-            if (layoutA_Mfirst) // Matrix A M-First?
-                TransposeMatrix((uint8_t*)matrices[MAT_A].ptr, matrices[MAT_A].dims.rows, matrices[MAT_A].dims.cols, "layoutA_Mfirst");
-            if (layoutB_Kfirst) // Matrix B K-First?
-                TransposeMatrix((uint8_t*)matrices[MAT_B].ptr, matrices[MAT_B].dims.rows, matrices[MAT_B].dims.cols, "layoutB_Kfirst");
-            if (layoutC_Mfirst) // Matrix C M-First?
-                TransposeMatrix((uint32_t*)matrices[MAT_C].ptr, matrices[MAT_C].dims.rows, matrices[MAT_C].dims.cols, "layoutC_Mfirst");
-        }
     }
     else
     {
         return std::nullopt;
     }
 
-    // Save original (pre-transform) A and B for validation (TT_MXM_BASIC only).
+    // Save original (pre-transform) A and B for validation before layout conversion.
     std::vector<uint8_t> savedA, savedB;
-    if (m_validate_matrix_result && tt == TT_MXM_BASIC)
+    if (m_validate_matrix_result)
     {
         savedA.assign((const uint8_t*)matrices[MAT_A].ptr, (const uint8_t*)matrices[MAT_A].ptr + matrices[MAT_A].bufferSize);
         savedB.assign((const uint8_t*)matrices[MAT_B].ptr, (const uint8_t*)matrices[MAT_B].ptr + matrices[MAT_B].bufferSize);
     }
 
-    if (tt == TT_MXM_BASIC)
+    if (tt != TT_CONV)
     {
         auto applyTransform = [&](auto* ptrA, auto* ptrB)
         {
@@ -1753,130 +1877,6 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
         else if (test_description.input_type == VK_COMPONENT_TYPE_UINT8_KHR)   applyTransform((uint8_t*) matrices[MAT_A].ptr, (uint8_t*) matrices[MAT_B].ptr);
     }
 
-    // Specialize the shader with the matrix sizes, strides, and constants.
-    // Also, work-group sizes
-    const uint32_t specDataMxMBasic[] = {
-        local_size_x,
-        local_size_y,
-        local_size_z,
-        testCase.TOTAL_M,
-        testCase.TOTAL_N,
-        testCase.TOTAL_K,
-        testCase.TILE_M,
-        testCase.TILE_N,
-        testCase.TILE_K,
-        testCase.layoutA_Mfirst,
-        testCase.layoutB_Nfirst,
-        testCase.layoutA_TiledKfirst,
-        testCase.layoutB_TiledKfirst,
-        testCase.layoutC_Mfirst,
-        testCase.layoutR_Mfirst,
-        testCase.strideAinElements,
-        testCase.strideBinElements,
-        testCase.strideCinElements,
-        testCase.strideRinElements
-    };
-
-    const uint32_t specDataMxM[] = {   // pass to shader_name.comp
-        local_size_x,               // layout(constant_id = 0) const uint local_size_x;
-        local_size_y,               // layout(constant_id = 1) const uint local_size_y;
-        local_size_z,               // layout(constant_id = 2) const uint local_size_z;
-        testCase.TOTAL_M,           // layout(constant_id = 3) const uint TOTAL_M = 1;
-        testCase.TOTAL_N,           // layout(constant_id = 4) const uint TOTAL_N = 1;
-        testCase.TOTAL_K,           // layout(constant_id = 5) const uint TOTAL_K = 1;
-        testCase.TILE_M,            // layout(constant_id = 6) const uint TILE_M = 1;
-        testCase.TILE_N,            // layout(constant_id = 7) const uint TILE_N = 1;
-        testCase.TILE_K,            // layout(constant_id = 8) const uint TILE_K = 1;
-        testCase.layoutA_Mfirst,    // layout(constant_id = 9) const bool layoutA_Mfirst = false;
-        testCase.layoutB_Kfirst,    // layout(constant_id =10) const bool layoutB_Kfirst = false;
-        testCase.layoutC_Mfirst,    // layout(constant_id =11) const bool layoutC_Mfirst = false;
-        testCase.layoutR_Mfirst,    // layout(constant_id =12) const bool layoutR_Mfirst = false;
-        testCase.strideAinElements, // layout(constant_id =13) const uint strideAinElements = 1;
-        testCase.strideBinElements, // layout(constant_id =14) const uint strideBinElements = 1;
-        testCase.strideCinElements, // layout(constant_id =15) const uint strideCinElements = 1;
-        testCase.strideRinElements  // layout(constant_id =16) const uint strideRinElements = 1;
-    };
-
-    const uint32_t specDataCONV[] = {   // pass to shader_name.comp
-        local_size_x,               // layout(constant_id = 0) const uint local_size_x;
-        local_size_y,               // layout(constant_id = 1) const uint local_size_y;
-        local_size_z,               // layout(constant_id = 2) const uint local_size_z;
-        testCase.TOTAL_M,           // layout(constant_id = 3) const uint TOTAL_M = 1;
-        testCase.TOTAL_N,           // layout(constant_id = 4) const uint TOTAL_N = 1;
-        testCase.TOTAL_K,           // layout(constant_id = 5) const uint TOTAL_K = 1;
-        testCase.TILE_M,            // layout(constant_id = 6) const uint TILE_M = 1;
-        testCase.TILE_N,            // layout(constant_id = 7) const uint TILE_N = 1;
-        testCase.TILE_K,            // layout(constant_id = 8) const uint TILE_K = 1;
-        (uint32_t)inputWidth,       // layout(constant_id = 9) const uint INPUT_W = 1;
-        (uint32_t)inputHeight,      // layout(constant_id =10) const uint INPUT_H = 1;
-        (uint32_t)filterWidth,      // layout(constant_id =11) const uint FILTER_W = 1;
-        (uint32_t)filterHeight,     // layout(constant_id =12) const uint FILTER_H = 1;
-        (uint32_t)dilation,         // layout(constant_id =13) const uint DILATION = 1;
-        (uint32_t)stride,           // layout(constant_id =14) const uint STRIDE  = 1;
-        testCase.strideAinElements, // layout(constant_id =15) const uint strideAinElements = 1;
-        testCase.strideBinElements, // layout(constant_id =16) const uint strideBinElements = 1;
-        testCase.strideCinElements, // layout(constant_id =17) const uint strideCinElements = 1;
-        testCase.strideRinElements  // layout(constant_id =18) const uint strideRinElements = 1;
-    };
-
-    auto fill_specialized_map_entries = [](VkSpecializationMapEntry entries[], uint32_t num_entries, uint32_t sizeof_entry)
-    {
-        for (uint32_t i = 0; i < num_entries; i++)
-            entries[i] = { i, sizeof_entry * i, sizeof_entry };
-    };
-
-#define ARRAY_LENGTH(x) (sizeof(x) / sizeof(x[0]))
-
-    VkSpecializationMapEntry entriesMxMBasic[ARRAY_LENGTH(specDataMxMBasic)];
-    fill_specialized_map_entries(entriesMxMBasic, ARRAY_LENGTH(specDataMxMBasic), sizeof(uint32_t));
-
-    VkSpecializationMapEntry entriesMxM[ARRAY_LENGTH(specDataMxM)];
-    fill_specialized_map_entries(entriesMxM, ARRAY_LENGTH(specDataMxM), sizeof(uint32_t)); // {0,  sizeof(uint32_t) * 0, sizeof(uint32_t)},...,//{end,  sizeof(uint32_t) * end, sizeof(uint32_t)}
-
-    VkSpecializationMapEntry entriesCONV[ARRAY_LENGTH(specDataCONV)];
-    fill_specialized_map_entries(entriesCONV, ARRAY_LENGTH(specDataCONV), sizeof(uint32_t)); // {0, sizeof(uint32_t) * 0, sizeof(uint32_t)}, ...,//{end,  sizeof(uint32_t) * end, sizeof(uint32_t)}
-
-    VkSpecializationInfo specInfo;
-    switch (tt)
-    {
-    case TT_CONV:
-        specInfo = { ARRAY_LENGTH(specDataCONV), entriesCONV, sizeof(specDataCONV), specDataCONV, };
-        break;
-    case TT_MXM_BASIC:
-        specInfo = { ARRAY_LENGTH(specDataMxMBasic), entriesMxMBasic, sizeof(specDataMxMBasic), specDataMxMBasic, };
-        break;
-    case TT_MXM_VecToMat:
-        specInfo = { ARRAY_LENGTH(specDataMxM), entriesMxM, sizeof(specDataMxM), specDataMxM, };
-        break;
-    default:
-        LOGE("Unknown use case(%d), can't sent specialized constantas to shader!", tt);
-    }
-
-#undef ARRAY_LENGTH
-
-    // Create pipeline with a desired subgroup size (e.g., AMD supports two subgroup sizes)
-    VkPipelineShaderStageRequiredSubgroupSizeCreateInfo subgroupSizeInfo = {};
-    subgroupSizeInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO;
-    subgroupSizeInfo.requiredSubgroupSize = subgroup_size; // Must be between min and max
-
-    VkPipelineShaderStageCreateInfo shaderCreateInfo   = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, &subgroupSizeInfo, 0, VK_SHADER_STAGE_COMPUTE_BIT, shaderModule, "main", &specInfo};
-    VkComputePipelineCreateInfo     pipelineCreateInfo = {VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO, NULL, 0, shaderCreateInfo, pipelineLayout, VK_NULL_HANDLE, 0 };
-
-    // Create the query pool
-    VkQueryPool query_pool_timestamps = VK_NULL_HANDLE;       // A query pool is required to use GPU time stamps
-    std::vector<uint64_t> time_stamps((size_t)perf_loop*2, 0);// We will get timestamps for the beginning and end of each of the compute passes
-                                                              // GPU time stamps will be stored in a vector
-    // VK_QUERY_TYPE_TIMESTAMP: We need to specify the query type for this pool, which in our case is for time stamps
-    // time_stamps: Set the no. of queries in this pool
-    VkQueryPoolCreateInfo query_pool_info = { VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO, nullptr, 0, VK_QUERY_TYPE_TIMESTAMP, static_cast<uint32_t>(time_stamps.size()), 0 };
-    result = vkCreateQueryPool(m_vulkan_instance.m_VulkanDevice, &query_pool_info, nullptr, &query_pool_timestamps);
-    CHECK_VK(result);
-
-    std::cout << "\nExecuting vkCreateComputePipelines(...) (takes a while!)\n";
-    VkPipeline pipeline;
-    result = vkCreateComputePipelines(m_vulkan_instance.m_VulkanDevice, VK_NULL_HANDLE, 1, &pipelineCreateInfo, NULL, &pipeline);
-    CHECK_VK(result);
-
     VkCommandBufferBeginInfo commandBufferBeginInfo{};
     commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     commandBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
@@ -1891,6 +1891,10 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
         vkCmdCopyBuffer(commandBuffers[0], m.hostBuffer, m.deviceBuffer, 1, &copy);
     }
 
+    VkMemoryBarrier uploadBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr,
+        VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT };
+    vkCmdPipelineBarrier(commandBuffers[0], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        0, 1, &uploadBarrier, 0, nullptr, 0, nullptr);
     result = vkEndCommandBuffer(commandBuffers[0]); // End command buffer recording
     CHECK_VK(result);
 
@@ -1914,18 +1918,25 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
 
 	// Reset the timestamp query pool, so we can start fetching new values into it
     vkCmdResetQueryPool(commandBuffers[1], query_pool_timestamps, 0, static_cast<uint32_t>(time_stamps.size()));
-    
+
     perf_loop = time_stamps.size()/2; // Both should have the same value, but just in case...
 
+    VkMemoryBarrier computeBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr,
+        VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_WRITE_BIT };
+    vkCmdDispatch(commandBuffers[1], groupCountX, groupCountY, groupCountZ); // untimed warmup
     for (size_t loop = 0; loop < perf_loop; loop++)
     {
-        vkCmdPipelineBarrier(commandBuffers[1], VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 0, nullptr);
-        vkCmdWriteTimestamp( commandBuffers[1], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,   query_pool_timestamps, loop*2  ); // Start timer...
+        vkCmdPipelineBarrier(commandBuffers[1], VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &computeBarrier, 0, nullptr, 0, nullptr);
+        // Start after the preceding compute dependency, including the warmup.
+        vkCmdWriteTimestamp( commandBuffers[1], VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, query_pool_timestamps, loop*2 );
         vkCmdDispatch(       commandBuffers[1], groupCountX, groupCountY, groupCountZ);                                // Dispacth work
         vkCmdWriteTimestamp( commandBuffers[1], VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, query_pool_timestamps,loop*2+1); // Stop timer...
     }
 
-    vkCmdPipelineBarrier(commandBuffers[1], VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 0, nullptr);
+    VkMemoryBarrier downloadBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr,
+        VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT };
+    vkCmdPipelineBarrier(commandBuffers[1], VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0, 1, &downloadBarrier, 0, nullptr, 0, nullptr);
 
     result = vkEndCommandBuffer(commandBuffers[1]); // End command buffer recording
     CHECK_VK(result);
@@ -1936,8 +1947,9 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
     result = vkQueueWaitIdle(submission_queue);
     CHECK_VK(result);
 
-    vkGetQueryPoolResults(m_vulkan_instance.m_VulkanDevice, query_pool_timestamps, 0,	time_stamps.size(), time_stamps.size() * sizeof(uint64_t), time_stamps.data(), sizeof(uint64_t), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
-    
+    result = vkGetQueryPoolResults(m_vulkan_instance.m_VulkanDevice, query_pool_timestamps, 0,	time_stamps.size(), time_stamps.size() * sizeof(uint64_t), time_stamps.data(), sizeof(uint64_t), VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
+    CHECK_VK(result);
+
     double ms = 0.0, min_ms = DBL_MAX, delta_in_ms = 0.0;
     for (size_t loop = 0; loop < perf_loop; loop++)
     {
@@ -1972,33 +1984,10 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
 
         if (m_show_peak_percentage && tt == TT_MXM_BASIC && m_peak_frequency_mhz > 0.0f)
         {
-            double peak_at_base_frequency = 0.0;
-            if (test_description.input_type == VK_COMPONENT_TYPE_FLOAT16_KHR)
-            {
-                switch (testCase.TILE_N)
-                {
-                    case 64: peak_at_base_frequency = 11.952012557461599; break;
-                    case 32: peak_at_base_frequency = 8.670843589169836; break;
-                    case 16: peak_at_base_frequency = 5.976315064720463; break;
-                    default: break;
-                }
-            }
-            else if (test_description.input_type == VK_COMPONENT_TYPE_SINT8_KHR)
-            {
-                switch (testCase.TILE_N)
-                {
-                    case 64: peak_at_base_frequency = 0.0; break;
-                    case 32: peak_at_base_frequency = 0.0; break;
-                    case 16: peak_at_base_frequency = 0.0; break;
-                    default: break;
-                }
-            }
-
-            const double peak_tops = peak_at_base_frequency * (static_cast<double>(m_peak_frequency_mhz) / 1025.0);
+            const double peak_tops = test_description.input_type == VK_COMPONENT_TYPE_FLOAT32_KHR ? m_peak_fp32
+                : test_description.input_type == VK_COMPONENT_TYPE_FLOAT16_KHR ? m_peak_fp16 : m_peak_int8;
             if (peak_tops > 0.0)
-            {
                 test_result.percentage = test_result.TOPS / peak_tops * 100.0;
-            }
         }
     }
     else
@@ -2020,6 +2009,10 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
         VkBufferCopy copy = { 0, 0, m.bufferSize };
         vkCmdCopyBuffer(commandBuffers[2], m.deviceBuffer, m.hostBuffer, 1, &copy);
     }
+    VkMemoryBarrier readbackBarrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr,
+        VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_HOST_READ_BIT };
+    vkCmdPipelineBarrier(commandBuffers[2], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+        0, 1, &readbackBarrier, 0, nullptr, 0, nullptr);
     result = vkEndCommandBuffer(commandBuffers[2]); // End command buffer recording
     CHECK_VK(result);
 
@@ -2029,26 +2022,47 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
     result = vkQueueWaitIdle(submission_queue);
     CHECK_VK(result);
 
-    // Compare GPU result against CPU reference matmul (TT_MXM_BASIC only).
-    if (m_validate_matrix_result && tt == TT_MXM_BASIC && !savedA.empty())
+    // Compare GPU output with the CPU reference for the selected kernel.
+    if (m_validate_matrix_result && !savedA.empty())
     {
         const uint32_t M  = testCase.TOTAL_M;
         const uint32_t N  = testCase.TOTAL_N;
         const uint32_t K  = testCase.TOTAL_K;
         const uint32_t RC = M * N;
 
+        auto accumulateReference = [&](auto* A, auto* B, auto* output)
+        {
+            using Acc = std::remove_pointer_t<decltype(output)>;
+            for (uint32_t m = 0; m < M; ++m)
+                for (uint32_t k = 0; k < K; ++k)
+                    for (int fy = 0; fy < (tt == TT_CONV ? filterHeight : 1); ++fy)
+                        for (int fx = 0; fx < (tt == TT_CONV ? filterWidth : 1); ++fx)
+                        {
+                            int pixel = int(m);
+                            if (tt == TT_CONV)
+                            {
+                                const int y = int(m / inputWidth) * stride + dilation * (fy - filterHeight / 2);
+                                const int x = int(m % inputWidth) * stride + dilation * (fx - filterWidth / 2);
+                                if (y < 0 || y >= inputHeight || x < 0 || x >= inputWidth) continue;
+                                pixel = y * inputWidth + x;
+                            }
+                            const Acc a = Acc(A[pixel * matrices[MAT_A].dims.cols + k]);
+                            for (uint32_t n = 0; n < N; ++n)
+                            {
+                                const size_t bIndex = tt == TT_CONV
+                                    ? ((n * filterHeight + fy) * filterWidth + fx) * matrices[MAT_B].dims.cols + k
+                                    : k * matrices[MAT_B].dims.cols + n;
+                                output[m * N + n] += a * Acc(B[bIndex]);
+                            }
+                        }
+        };
+
         // Compute reference result into matrixR_CPU_fp32.
         // Loop order (m, k outer; n inner) is cache-friendly for row-major A and B.
         auto cpuRef = [&](auto* A, auto* B)
         {
             std::fill(matrixR_CPU_fp32, matrixR_CPU_fp32 + RC, 0.0f);
-            for (uint32_t m = 0; m < M; ++m)
-                for (uint32_t k = 0; k < K; ++k)
-                {
-                    const float a = (float)A[m * K + k];
-                    for (uint32_t n = 0; n < N; ++n)
-                        matrixR_CPU_fp32[m * N + n] += a * (float)B[k * N + n];
-                }
+            accumulateReference(A, B, matrixR_CPU_fp32);
         };
 
         auto compare = [&](auto* gpu, float tol, const char* label) -> bool
@@ -2068,6 +2082,7 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
                         : (mi * strideR + ni);
                     const float gpu_val = (float)gpu[gpu_idx];
                     const float cpu_val = matrixR_CPU_fp32[mi * N + ni];
+                    if (!std::isfinite(gpu_val) || !std::isfinite(cpu_val)) return false;
                     const float diff    = fabsf(gpu_val - cpu_val);
                     const float ref     = fabsf(cpu_val);
                     const float relErr  = ref > 1.0f ? diff / ref : diff;
@@ -2087,13 +2102,7 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
         auto cpuRefInt = [&](auto* A, auto* B)
         {
             matrixR_CPU_i64.assign(RC, 0);
-            for (uint32_t m = 0; m < M; ++m)
-                for (uint32_t k = 0; k < K; ++k)
-                {
-                    const int64_t a = (int64_t)A[m * K + k];
-                    for (uint32_t n = 0; n < N; ++n)
-                        matrixR_CPU_i64[m * N + n] += a * (int64_t)B[k * N + n];
-                }
+            accumulateReference(A, B, matrixR_CPU_i64.data());
         };
 
         // Exact comparison for integer types: GPU result must match CPU i64 exactly.
@@ -2155,6 +2164,11 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
         destroyMatrixDesc(m_vulkan_instance.m_VulkanDevice, matrices[i]);
     }
 
+    vkDestroyQueryPool(m_vulkan_instance.m_VulkanDevice, query_pool_timestamps, nullptr);
+    vkDestroyCommandPool(m_vulkan_instance.m_VulkanDevice, commandPool, nullptr);
+    vkDestroyDescriptorPool(m_vulkan_instance.m_VulkanDevice, descriptorPool, nullptr);
+    vkDestroyPipelineLayout(m_vulkan_instance.m_VulkanDevice, pipelineLayout, nullptr);
+    vkDestroyDescriptorSetLayout(m_vulkan_instance.m_VulkanDevice, descriptorSetLayout, nullptr);
     vkDestroyPipeline(m_vulkan_instance.m_VulkanDevice, pipeline, NULL);
 
     vkDestroyShaderModule(m_vulkan_instance.m_VulkanDevice, shaderModule, NULL);
@@ -2164,5 +2178,11 @@ std::optional<CooperativeMatrixRunner::TestResult> CooperativeMatrixRunner::RunT
     delete[] matrixR_CPU_sint32;
     delete[] matrixR_CPU_uint32;
 
+    LOGI("COOP_RESULT test=%u type=%s A=%s B=%s C=%s M=%u N=%u K=%u tile=%ux%ux%u repeats=%u us=%.6f tops=%.6f validation=%s",
+        tt, GetMatrixComponentTypeName(test_description.input_type), GetLayoutName(test_description.layoutA),
+        GetLayoutName(test_description.layoutB), GetLayoutName(test_description.layoutR),
+        testCase.TOTAL_M, testCase.TOTAL_N, testCase.TOTAL_K, testCase.TILE_M, testCase.TILE_N, testCase.TILE_K,
+        perf_loop, test_result.time_total, test_result.TOPS,
+        test_result.validation_pass.has_value() ? (*test_result.validation_pass ? "PASS" : "FAIL") : "OFF");
     return test_result;
 }

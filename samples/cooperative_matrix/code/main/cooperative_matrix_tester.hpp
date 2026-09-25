@@ -155,14 +155,15 @@ private:
     MatrixTransposeOption m_matrix_transpose_options[NUM_MATS] = { VARIABLE , VARIABLE , VARIABLE , ALWAYS_FALSE };
 
     int  m_test_repeats          = 1;
-    bool m_transpose_when_needed = false;
+    bool m_legacy_layouts = false;
     bool m_validate_matrix_result = false;
 
     bool m_normalize_inputs = true;
     int m_input_width = 32;
     int m_input_height = 16;
 
-    bool  m_show_peak_percentage = true;
+    bool  m_show_peak_percentage = false;
+    float m_peak_fp32 = 0.0f, m_peak_fp16 = 0.0f, m_peak_int8 = 0.0f;
     float m_peak_frequency_mhz = 1025.0f;
 
     bool     m_is_processing_tests   = false;

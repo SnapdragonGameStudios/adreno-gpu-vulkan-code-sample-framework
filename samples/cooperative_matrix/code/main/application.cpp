@@ -7,6 +7,7 @@
 //============================================================================================================
 
 #include "application.hpp"
+#include "cooperative_matrix_conversion.hpp"
 #include "main/applicationEntrypoint.hpp"
 #include "camera/cameraController.hpp"
 #include "camera/cameraControllerTouch.hpp"
@@ -69,12 +70,18 @@ void Application::PreInitializeSetVulkanConfiguration(Vulkan::AppConfiguration& 
 //-----------------------------------------------------------------------------
 {
     ApplicationHelperBase::PreInitializeSetVulkanConfiguration(config);
+    config.ApiVerson = VK_MAKE_VERSION(1, 3, 0);
+    config.RequiredExtension<ExtensionLib::Ext_VK_KHR_maintenance4>();
+    config.RequiredExtension<ExtensionLib::Ext_VK_KHR_vulkan_memory_model>();
+    config.RequiredExtension<ExtensionLib::Ext_VK_KHR_shader_float16_int8>();
+    config.RequiredExtension<ExtensionLib::Ext_VK_EXT_subgroup_size_control>();
     config.RequiredExtension<ExtensionLib::Ext_VK_KHR_get_physical_device_properties2>();
     config.RequiredExtension<ExtensionLib::Ext_VK_KHR_synchronization2>();
     config.RequiredExtension<ExtensionLib::Ext_VK_KHR_create_renderpass2>();
     config.RequiredExtension<ExtensionLib::Ext_VK_KHR_buffer_device_address>();
     config.RequiredExtension<ExtensionLib::Ext_VK_KHR_8bit_storage>();
     config.OptionalExtension<ExtensionLib::Ext_VK_KHR_cooperative_matrix>();
+    config.OptionalExtension<QcomCoopMatConversionExtension>();
 }
 
 //-----------------------------------------------------------------------------

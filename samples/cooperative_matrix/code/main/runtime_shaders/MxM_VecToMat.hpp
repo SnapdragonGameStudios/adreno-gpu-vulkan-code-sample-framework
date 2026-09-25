@@ -9,56 +9,55 @@
 
 #include <string>
 
+// Matrix multiplication shader with selectable input and output buffer layouts.
 const char* Test02_MxM_VecToMat = R"(
 #version 450 core
 #pragma use_vulkan_memory_model
 #extension GL_KHR_shader_subgroup_basic : enable
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_KHR_memory_scope_semantics : enable
-#extension GL_KHR_cooperative_matrix : enable
+#extension GL_KHR_cooperative_matrix : require
+#extension GL_QCOM_cooperative_matrix_conversion : require
 #extension GL_EXT_buffer_reference : enable
 #extension GL_EXT_control_flow_attributes : enable
 #extension GL_KHR_shader_subgroup_basic : enable
-#extension GL_EXT_debug_printf : enable // Enable this extension if you want to use printf() inside the shader
+#extension GL_EXT_debug_printf : enable
 
 #extension GL_EXT_shader_explicit_arithmetic_types_float32 : enable
 #extension GL_EXT_shader_explicit_arithmetic_types_float16 : enable
 #extension GL_EXT_shader_explicit_arithmetic_types_int32   : enable
 #extension GL_EXT_shader_explicit_arithmetic_types_int8    : enable
-#extension GL_QCOM_cooperative_matrix_conversion : enable
 
-// These specialized constants are set inside the host
-layout(constant_id = 0) const uint lsx = 64; // local_size_x set inside the host and map to constant_id = 0
-layout(constant_id = 1) const uint lsy = 2;  // local_size_y set inside the host and map to constant_id = 1
-layout(constant_id = 2) const uint lsz = 2;  // local_size_z set inside the host and map to constant_id = 2
+layout(constant_id = 0) const uint lsx = 64;
+layout(constant_id = 1) const uint lsy = 2;
+layout(constant_id = 2) const uint lsz = 2;
 layout(constant_id = 3) const uint TOTAL_M = 1;
 layout(constant_id = 4) const uint TOTAL_N = 1;
 layout(constant_id = 5) const uint TOTAL_K = 1;
 layout(constant_id = 6) const uint TILE_M = 1;
 layout(constant_id = 7) const uint TILE_N = 1;
 layout(constant_id = 8) const uint TILE_K = 1;
-layout(constant_id = 9) const bool layoutA_Mfirst = false;
-layout(constant_id = 10) const bool layoutB_Kfirst = false;
-layout(constant_id = 11) const bool layoutC_Mfirst = false;
-layout(constant_id = 12) const bool layoutR_Mfirst = false;
-layout(constant_id = 13) const uint strideAinElements = 1;
-layout(constant_id = 14) const uint strideBinElements = 1;
-layout(constant_id = 15) const uint strideCinElements = 1;
-layout(constant_id = 16) const uint strideRinElements = 1;
+layout(constant_id = 9)  const bool layoutA_Mfirst = false;
+layout(constant_id = 10) const bool layoutB_Nfirst = false;
+layout(constant_id = 11) const bool layoutA_TiledKfirst = true;
+layout(constant_id = 12) const bool layoutB_TiledKfirst = true;
+layout(constant_id = 13) const bool layoutC_Mfirst = false;
+layout(constant_id = 14) const bool layoutR_Mfirst = false;
+layout(constant_id = 15) const uint strideAinElements = 1;
+layout(constant_id = 16) const uint strideBinElements = 1;
+layout(constant_id = 17) const uint strideCinElements = 1;
+layout(constant_id = 18) const uint strideRinElements = 1;
 
-// #defines set on compiler GLSL to SPIR-V command line:
-// A_TYPE = e.g. float or float16_t
-// R_TYPE = e.g. float or float16_t
-
+#if PACKED_A
+layout(set=0, binding=0) readonly buffer InputA { uint32_t x[]; } inputA;
+#else
 layout(set=0, binding=0) readonly buffer InputA { A_TYPE x[]; } inputA;
+#endif
 layout(set=0, binding=1) readonly buffer InputB { A_TYPE x[]; } inputB;
 layout(set=0, binding=2) readonly buffer InputC { R_TYPE x[]; } inputC;
-layout(set=0, binding=3) buffer Output { R_TYPE x[]; } outputO;
+layout(set=0, binding=3)  buffer Output { R_TYPE x[]; } outputO;
 
-//layout(set=0, binding=0, std430) uniform Params { InputA inputA; InputB inputB; InputC inputC; Output outputO; } params;
-
-// Set work-group size at dispacth time using specialized constant_id 0,1,2, see host source code for detail
-layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in; 
+layout(local_size_x_id = 0, local_size_y_id = 1, local_size_z_id = 2) in;
 
 void main()
 {
@@ -68,37 +67,71 @@ void main()
 
     const uint32_t row = block_id_m * TILE_M;
     const uint32_t col = block_id_n * TILE_N;
-    
-    // Initialize result matR to zero, not using matC in this shader
-    coopmat<R_TYPE, gl_ScopeSubgroup, 64, 64, gl_MatrixUseAccumulator> matR;
-    matR = coopmat<R_TYPE, gl_ScopeSubgroup, 64, 64, gl_MatrixUseAccumulator>(0.0);
-    
-    for (uint32_t step = 0; step < TOTAL_K; step += 8)
+
+    coopmat<R_TYPE, gl_ScopeSubgroup, TILE_M, TILE_N, gl_MatrixUseAccumulator> matR;
+    matR = coopmat<R_TYPE, gl_ScopeSubgroup, TILE_M, TILE_N, gl_MatrixUseAccumulator>(0.0);
+
+    for (uint32_t step = 0; step < TOTAL_K; step += TILE_K)
     {
-        // On each iteration, load a row of cooperative matrices from matrix A,
-        // load a column of cooperative matrices from matrix B, and multiply all
-        // pairs of those matrices.
-        uint32_t subMatrixAStartInElements = layoutA_Mfirst ? row + step * strideAinElements : row * strideAinElements + step;
-        uint32_t subMatrixBStartInElements = layoutB_Kfirst ? col * strideBinElements + step : col + step * strideBinElements;
-
         coopmat<A_TYPE, gl_ScopeSubgroup, TILE_M, TILE_K, gl_MatrixUseA> matA;
-
-        uint32_t uvecA[8];
-        for (int i=0; i<8; i++)
-            uvecA[i] = floatBitsToInt(inputA.x[subMatrixAStartInElements + gl_GlobalInvocationID.x * strideAinElements + i]);
-
-        // convert A vector to A matrix
-        vectorToCoopmatQCOM(uvecA, matA);
+        const uint laneRow = row + gl_SubgroupInvocationID;
+#if PACKED_A
+        // QCOM conversion interprets each word as NUM_PACK input components.
+        uint32_t vecA[TILE_K / NUM_PACK];
+        if (layoutA_Mfirst)
+        {
+            // Gather strided INT8 components without changing their bit patterns.
+            const uint bitsPerComponent = 32 / NUM_PACK;
+            const uint componentMask = (1u << bitsPerComponent) - 1u;
+            for (uint k = 0; k < TILE_K / NUM_PACK; ++k)
+            {
+                uint packed = 0;
+                for (uint c = 0; c < NUM_PACK; ++c)
+                {
+                    const uint offset = laneRow + (step + k * NUM_PACK + c) * strideAinElements;
+                    const uint component = (inputA.x[offset / NUM_PACK] >> ((offset % NUM_PACK) * bitsPerComponent)) & componentMask;
+                    packed |= component << (c * bitsPerComponent);
+                }
+                vecA[k] = packed;
+            }
+        }
+        else
+        {
+            const uint wordOffset = (layoutA_TiledKfirst ? laneRow * TILE_K + step * TOTAL_M
+                                                       : laneRow * strideAinElements + step) / NUM_PACK;
+            for (uint k = 0; k < TILE_K / NUM_PACK; ++k)
+                vecA[k] = inputA.x[wordOffset + k];
+        }
+#else
+        A_TYPE vecA[TILE_K];
+        for (uint k = 0; k < TILE_K; ++k)
+        {
+            const uint offset = layoutA_Mfirst ? laneRow + (step + k) * strideAinElements
+                : (layoutA_TiledKfirst ? laneRow * TILE_K + step * TOTAL_M + k
+                                      : laneRow * strideAinElements + step + k);
+            vecA[k] = inputA.x[offset];
+        }
+#endif
+        vectorToCoopmatQCOM(vecA, matA);
 
         coopmat<A_TYPE, gl_ScopeSubgroup, TILE_K, TILE_N, gl_MatrixUseB> matB;
-        coopMatLoad(matB, inputB.x, subMatrixBStartInElements, strideBinElements, int(layoutB_Kfirst));
+        if (layoutB_Nfirst)
+        {
+            coopMatLoad(matB, inputB.x, col + step * strideBinElements, strideBinElements, 0);
+        }
+        else if (layoutB_TiledKfirst)
+        {
+            coopMatLoad(matB, inputB.x, col * TILE_K + step * TOTAL_N, TILE_K, 1);
+        }
+        else
+        {
+            coopMatLoad(matB, inputB.x, col * strideBinElements + step, strideBinElements, 1);
+        }
 
         matR = coopMatMulAdd(matA, matB, matR);
     }
 
-    // Store results
     uint32_t subMatrixRStartInElements = layoutR_Mfirst ? col * strideRinElements + row : row * strideRinElements + col;
-
     coopMatStore(matR, outputO.x, subMatrixRStartInElements, strideRinElements, int(layoutR_Mfirst));
 }
 )";

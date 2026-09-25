@@ -25,7 +25,7 @@ const char* Test03_CONV = R"(
 #extension GL_EXT_shader_explicit_arithmetic_types_float16 : enable
 #extension GL_EXT_shader_explicit_arithmetic_types_int32   : enable
 #extension GL_EXT_shader_explicit_arithmetic_types_int8    : enable
-#extension GL_QCOM_cooperative_matrix_conversion : enable
+#extension GL_QCOM_cooperative_matrix_conversion : require
 
 // These specialized constants are set inside the host
 layout(constant_id = 0) const uint lsx = 64; // local_size_x set inside the host and map to constant_id = 0
@@ -52,7 +52,6 @@ layout(constant_id = 18) const uint strideRinElements = 1;
 // A_TYPE = e.g. float or float16_t
 // R_TYPE = e.g. float or float16_t
 
-layout(set=0, binding=0) readonly buffer InputA     { A_TYPE   x[]; } inputA;
 layout(set=0, binding=0) readonly buffer InputAuint { uint32_t x[]; } inputAuint;
 layout(set=0, binding=1) readonly buffer InputB { A_TYPE x[]; } inputB;
 layout(set=0, binding=2) readonly buffer InputC { R_TYPE x[]; } inputC;
@@ -70,7 +69,7 @@ void main()
     const uint32_t row = block_id_m * TILE_M;
     const uint32_t col = block_id_n * TILE_N;
     
-    uint32_t gidx_m = gl_GlobalInvocationID.x + TILE_M * gl_GlobalInvocationID.y; // fibers along M
+    uint32_t gidx_m = gl_SubgroupInvocationID + TILE_M * gl_GlobalInvocationID.y; // fibers along M
     uint32_t out_col_id = gidx_m % INPUT_W;
     uint32_t out_row_id = gidx_m / INPUT_W;
 
@@ -94,18 +93,18 @@ void main()
                 // load B matrix input data using coop_mat extension
                 coopMatLoad(matB, inputB.x, subMatrixBStartInElements, FILTER_H * FILTER_W * strideBinElements, int(true));
 
-                // load A matrix input data as vectors using regular vector load
-                uint32_t input_row_id = STRIDE * out_row_id + DILATION * (filter_row - filter_offset_h);
-                uint32_t input_col_id = STRIDE * out_col_id + DILATION * (filter_col - filter_offset_w);
-
-                // load A vector data from memory
-                uint32_t vecA[TILE_K/NUM_PACK];
-                for (int i=0; i<TILE_K/NUM_PACK; i++)
-                    vecA[i] = inputAuint.x[(input_row_id * INPUT_W + input_col_id) * strideAinElements/NUM_PACK + step/NUM_PACK + i];
-
-                // zero fill A vector data for out of boundary cases
-                if ((input_row_id < 0) || (input_row_id >= INPUT_H) || (input_col_id < 0) || (input_col_id >= INPUT_W))
-                  for (int i=0; i<TILE_K/NUM_PACK; i++) vecA[i] = uint32_t(0);
+                // Check signed spatial coordinates before touching the input buffer.
+                const int input_row_id = int(STRIDE * out_row_id) + int(DILATION) * (int(filter_row) - int(filter_offset_h));
+                const int input_col_id = int(STRIDE * out_col_id) + int(DILATION) * (int(filter_col) - int(filter_offset_w));
+                const bool inBounds = input_row_id >= 0 && input_row_id < int(INPUT_H)
+                    && input_col_id >= 0 && input_col_id < int(INPUT_W);
+                uint32_t vecA[TILE_K / NUM_PACK];
+                for (uint i = 0; i < TILE_K / NUM_PACK; ++i)
+                {
+                    vecA[i] = 0;
+                    if (inBounds)
+                        vecA[i] = inputAuint.x[((uint(input_row_id) * INPUT_W + uint(input_col_id)) * strideAinElements + step) / NUM_PACK + i];
+                }
 
                 // convert A vector to A matrix
                 vectorToCoopmatQCOM(vecA, matA);
