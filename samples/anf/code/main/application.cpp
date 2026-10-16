@@ -359,9 +359,6 @@ void Application::PreInitializeSetVulkanConfiguration(Vulkan::AppConfiguration& 
 bool Application::Initialize(uintptr_t windowHandle, uintptr_t hInstance)
 //-----------------------------------------------------------------------------
 {
-    // Use a fixed 1080p output size for this sample.
-    gRenderWidth  = 1920;
-    gRenderHeight = 1080;
     m_WindowHandle = windowHandle;
 
     if (!ApplicationHelperBase::Initialize(windowHandle, hInstance)) return false;
